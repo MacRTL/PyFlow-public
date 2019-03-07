@@ -39,131 +39,85 @@ from torch.autograd import Variable
 
 import time
 import copy
-
 import sys
 import os
+
+# Load PyFlow modules
 sys.path.append("../data")
 import dataReader as dr
+import constants as const
+#
+sys.path.append("../metric")
+import metric_collocated as metric
+#
+sys.path.append("../sfsmodel")
+import sfsmodel_nn
+import sfsmodel_smagorinsky
 
-# Restart file to read
+
+# Restart and target files to read
 restartFileStr = '../../examples/filtered_vol_dnsbox_1024_Lx0.045_NR_00000020_coarse'
 targetFileStr  = restartFileStr 
 
 #restartFileStr = '/projects/sciteam/baxh/Downsampled_Data_Folder/data_1024_Lx0.045_NR_Delta32_downsample8x/filtered_vol_dnsbox_1024_Lx0.045_NR_00000020_coarse'
 #targetFileStr  = '/projects/sciteam/baxh/Downsampled_Data_Folder/data_1024_Lx0.045_NR_Delta32_downsample8x/filtered_vol_dnsbox_1024_Lx0.045_NR_00000030_coarse'
 
-# Torch state
-haveCuda = torch.cuda.is_available()
 
-
-# Normalization weights
-x_max16 = np.array( [1.63781185e+01, 1.58859625e+01, 1.42067013e+01, 1.0,
- 4.07930586e+04, 6.61947031e+04, 6.84387969e+04, 7.55127656e+04,
- 4.52174883e+04, 6.18495938e+04, 6.63429844e+04, 6.53548398e+04,
- 4.72169219e+04, 2.35592576e+08, 5.82017792e+08, 5.66800960e+08,
- 6.06438195e+09, 6.44448256e+09, 8.68913254e+09, 4.70188640e+08,
- 5.84262976e+08, 2.25895120e+08, 3.91230048e+08, 6.27150400e+08,
- 7.79649920e+08, 2.32722912e+08, 3.16961472e+08, 2.27726320e+08,
- 5.91761536e+08, 6.22432256e+08, 4.68478272e+08, 1.25525498e+00,
- 4.80542541e-01, 9.08308625e-01, 4.80542541e-01, 1.10598314e+00,
- 7.01258421e-01, 9.08308625e-01, 7.01258421e-01, 9.65657115e-01] )
-
-x_max16 = x_max16[0:-9]
-
-#data = dr.readNGA('10secondsOutputGaussianFilter8xNR_Adjoint_005')
-#data = data[-1][:,:,:,0:4]
-#names,data = dr.readNGArestart('data_LESbox_128_Dx8_Lx0.045.1_2.01000E-04.filter')
-
+# ----------------------------------------------------
+# Initialize data files
+# ----------------------------------------------------
+# Read restart data file
 xGrid,yGrid,zGrid,names,dataTime,data = dr.readNGA(restartFileStr)
+data_restart = data[:,:,:,0:4]
 
-data = data[:,:,:,0:4]
+# Grid parameters
+#   Currently configured for uniform grid
+Nx = len(xGrid); Lx = xGrid[-1]-xGrid[0]; dx = Lx/float(Nx)
+Ny = len(yGrid); Ly = yGrid[-1]-yGrid[0]; dy = Ly/float(Ny)
+Nz = len(zGrid); Lz = zGrid[-1]-zGrid[0]; dz = Lz/float(Nz)
 
-#Number of grid points
-N = len(xGrid)
+# Read target data file
+xGrid_t,yGrid_t,zGrid_t,names_t,dataTime_t,data_t = dr.readNGA(targetFileStr)
+data_target10 = data_t[:,:,:,0:4]
 
-data_filtered_DNS_128 =  data
-
-
-data_target10 = dr.readNGA(targetFileStr)
-
-data_target10_np = data_target10[-1][:,:,:,0:4]
-
-
-
-
+# Set up Torch state
+haveCuda = torch.cuda.is_available()
 if (haveCuda):
-    x_max_P = torch.FloatTensor( x_max16 ).cuda()
-    target_P = torch.FloatTensor( data_target10_np ).cuda()
+    x_max_P = torch.FloatTensor( const.x_max16 ).cuda()
+    target_P = torch.FloatTensor( data_target10 ).cuda()
 else:
-    x_max_P = torch.FloatTensor( x_max16 )
-    target_P = torch.FloatTensor( data_target10_np )
-
-
-
-
-####Neural Network solution
-
-
-#Number of hidden units
-H = 100
-
-number_inputs = 3+1+9+18
-
-class ClosureModel2(nn.Module):
-    def __init__(self):
-        super(ClosureModel2, self).__init__()
-        # input is 28x28
-        # padding=2 for same padding
-        
-        self.fc1 = nn.Linear(number_inputs, H)
-
-        self.fc5 = nn.Linear(H, H)
-        self.fc6 = nn.Linear(H, H)
-
-        self.fc7 = nn.Linear(H, 6, bias = True)
-        
-        
-    def forward(self, x):
-        
-        h1 = F.tanh(self.fc1( x ))
-          
-        
-        h2 = F.tanh(self.fc5( h1 ))
-        
-        h3 = F.tanh(self.fc6( h2 ))
-        
-        f_out = self.fc7(h3)
-        
-        return f_out    
-
+    x_max_P = torch.FloatTensor( const.x_max16 )
+    target_P = torch.FloatTensor( data_target10 )
 
     
-model = ClosureModel2()
-
+# ----------------------------------------------------
+# Initialize closure model(s)
+# ----------------------------------------------------
+# Initialize the neural network closure model
+model = sfsmodel_nn.ClosureModel2()
 model_name = 'LES_model_NR_March2019'
-
-
 #model.load_state_dict(torch.load(model_name))
+#if (haveCuda):
+    #model.cuda()
 
-       
-#model.cuda()
 
 #Set up some vectors which will be helpful for the PyTorch finite difference implementation..
 
 #initial condition
 
-IC_u_np = data_filtered_DNS_128[:,:,:,0:1]
+# ----------------------------------------------------
+# Set up initial condition
+# ----------------------------------------------------
+IC_u_np = data_restart[:,:,:,0:1]
 
 #IC_v_np = np.zeros( ( 64, 64,1) )
-IC_v_np = data_filtered_DNS_128[:,:,:,1:2]
+IC_v_np = data_restart[:,:,:,1:2]
 
-IC_w_np = data_filtered_DNS_128[:,:,:,2:3]
+IC_w_np = data_restart[:,:,:,2:3]
 
-IC_p_np  = data_filtered_DNS_128[:,:,:,3:4]
+IC_p_np  = data_restart[:,:,:,3:4]
 
-IC_zeros_np = np.zeros( ( N, N,N,1) )
-
-dx = 0.045/float(N)
+IC_zeros_np = np.zeros( (Nx,Ny,Nz,1) )
 
 Num_pressure_iterations = 100
 
@@ -178,154 +132,15 @@ dt_LES = 0.0000025
 
 T_LES = 1*0.0001
 
-
-
-#Smagorinsky Closure Model
-def Smagorinsky(u_x_P, u_y_P, u_z_P, v_x_P, v_y_P, v_z_P, w_x_P, w_y_P, w_z_P, Closure_u_P, Closure_v_P, Closure_w_P):
     
-    S_11 = 0.5*(u_x_P + u_x_P)
-    S_12 = 0.5*(u_y_P + v_x_P)
-    S_13 = 0.5*(u_z_P + w_x_P)
-    S_22 = 0.5*(v_y_P + v_y_P)
-    S_23 = 0.5*(v_z_P + w_y_P)
-    S_33 = 0.5*(w_z_P + w_z_P)
-    
-    Delta_Smag = 32.0*0.045/1024.0
-    C_S = 0.18
-    
-    S_sum = S_11*S_11 + S_22*S_22 + S_33*S_33 + 2.0*( S_12*S_12 + S_13*S_13  + S_23*S_23 )
-    
-    S_magnitude = torch.sqrt( 2.0*S_sum )
-    
-    Coeff = -2.0*(C_S*Delta_Smag)*(C_S*Delta_Smag)*S_magnitude
-    
-    #S_11 = 
-    
-    Closure_u_P[1:-1,1:-1,1:-1, :] =  Coeff[1:-1,1:-1, 1:-1,:]*( (S_11[2:,1:-1, 1:-1,:] - S_11[0:-2,1:-1, 1:-1,:])    +  (S_12[1:-1,2:, 1:-1,:] - S_12[1:-1,0:-2, 1:-1,:]) +  (S_13[1:-1,1:-1, 2:,:] - S_13[1:-1, 1:-1, 0:-2,:])  )/(2*dx)
-    
-    Closure_v_P[1:-1,1:-1,1:-1, :] =  Coeff[1:-1,1:-1, 1:-1,:]*( (S_12[2:,1:-1, 1:-1,:] - S_12[0:-2,1:-1, 1:-1,:])    +  (S_22[1:-1,2:, 1:-1,:] - S_22[1:-1,0:-2, 1:-1,:]) +  (S_23[1:-1,1:-1, 2:,:] - S_23[1:-1, 1:-1, 0:-2,:])  )/(2*dx)
-    
-    Closure_w_P[1:-1,1:-1,1:-1, :] =  Coeff[1:-1,1:-1, 1:-1,:]*( (S_13[2:,1:-1, 1:-1,:] - S_13[0:-2,1:-1, 1:-1,:])    +  (S_23[1:-1,2:, 1:-1,:] - S_23[1:-1,0:-2, 1:-1,:]) +  (S_33[1:-1,1:-1, 2:,:] - S_33[1:-1, 1:-1, 0:-2,:])  )/(2*dx)
-    
-    
-    return Closure_u_P, Closure_v_P, Closure_w_P
-    
-    
-
-#Upwind FD scheme
-def FiniteDifference_u_UPWIND(u_P):
-    #u derivatives
-    u_x_P[1:-1,:,:,:] = (u_P[1:-1,:,:,:] - u_P[0:-2,:,:,:])/(1*dx)
-    u_y_P[:,1:-1,:,:] = (u_P[:,1:-1,:,:] - u_P[:,0:-2,:,:])/(1*dx)
-    u_z_P[:,:,1:-1,:] = (u_P[:,:,1:-1,:] - u_P[:,:,0:-2,:])/(1*dx)
-
-
-    #u periodic boundary conditions
-    u_x_P[-1,:,:,:] = (u_P[-1,:,:,:] - u_P[-2,:,:,:])/(1*dx)
-    u_x_P[0,:,:,:] = (u_P[0,:,:,:] - u_P[-1,:,:,:])/(1*dx)
-    
-    u_y_P[:,-1,:,:] = (u_P[:,-1,:,:] - u_P[:,-2,:,:])/(1*dx)
-    u_y_P[:,0,:,:] = (u_P[:,0,:,:] - u_P[:,-1,:,:])/(1*dx)
-    
-    u_z_P[:,:,-1,:] = (u_P[:,:,-1,:] - u_P[:,:,-2,:])/(1*dx)
-    u_z_P[:,:,0,:] = (u_P[:,:,0,:] - u_P[:,:,-1,:])/(1*dx)
-
-    return u_x_P, u_y_P, u_z_P
-
-
-
-
-
-def FiniteDifference_u_DOWNWIND(u_P):
-    #u derivatives
-    u_x_P[1:-1,:,:,:] = (u_P[2:,:,:,:] - u_P[1:-1,:,:,:])/(1*dx)
-    u_y_P[:,1:-1,:,:] = (u_P[:,2:,:,:] - u_P[:,1:-1,:,:])/(1*dx)
-    u_z_P[:,:,1:-1,:] = (u_P[:,:,2:,:] - u_P[:,:,1:-1,:])/(1*dx)
-
-
-    #u periodic boundary conditions
-    u_x_P[-1,:,:,:] = (u_P[0,:,:,:] - u_P[-1,:,:,:])/(1*dx)
-    u_x_P[0,:,:,:] = (u_P[1,:,:,:] - u_P[0,:,:,:])/(1*dx)
-    
-    u_y_P[:,-1,:,:] = (u_P[:,0,:,:] - u_P[:,-1,:,:])/(1*dx)
-    u_y_P[:,0,:,:] = (u_P[:,1,:,:] - u_P[:,0,:,:])/(1*dx)
-    
-    u_z_P[:,:,-1,:] = (u_P[:,:,0,:] - u_P[:,:,-1,:])/(1*dx)
-    u_z_P[:,:,0,:] = (u_P[:,:,1,:] - u_P[:,:,0,:])/(1*dx)
-
-
-    return u_x_P, u_y_P, u_z_P
-
-
-#Central Difference FD scheme
-def FiniteDifference_u(u_P, u_x_P, u_y_P, u_z_P, u_xx_P, u_yy_P, u_zz_P, u_xy_P, u_xz_P, u_yz_P):
-    #u derivatives
-    u_x_P[1:-1,:,:,:] = (u_P[2:,:,:,:] - u_P[0:-2,:,:,:])/(2*dx)
-    u_y_P[:,1:-1,:,:] = (u_P[:,2:,:,:] - u_P[:,0:-2,:,:])/(2*dx)
-    u_z_P[:,:,1:-1,:] = (u_P[:,:,2:,:] - u_P[:,:,0:-2,:])/(2*dx)
-    u_xx_P[1:-1,:,:,:] = (u_P[2:,:,:,:] -2*u_P[1:-1,:,:,:]+ u_P[0:-2,:,:,:])/(dx*dx)   
-    u_yy_P[:,1:-1,:,:] = (u_P[:,2:,:,:] -2*u_P[:,1:-1,:,:]+ u_P[:,0:-2,:,:])/(dx*dx)  
-    u_zz_P[:,:,1:-1,:] = (u_P[:,:,2:,:] -2*u_P[:,:,1:-1,:]+ u_P[:,:,0:-2,:])/(dx*dx) 
-
-    u_xy_P[1:-1,1:-1,:,:] = (u_P[2:,2:,:,:] - u_P[0:-2,2:,:,:] - u_P[2:,0:-2,:,:] + u_P[0:-2,0:-2,:,:] )/(4*dx*dx)     
-    u_xz_P[1:-1,:,1:-1,:] = (u_P[2:,:,2:,:] - u_P[0:-2,:,2:,:] - u_P[2:,:,0:-2,:] + u_P[0:-2,:,0:-2,:] )/(4*dx*dx)     
-    u_yz_P[:,1:-1,1:-1,:] = (u_P[:,2:,2:,:] - u_P[:,0:-2,2:,:] - u_P[:,2:,0:-2,:] + u_P[:,0:-2,0:-2,:] )/(4*dx*dx)    
-    
-    #higher-order finite difference....
-    u_x_P[3:-3,1:-1,1:-1, :] = ( -(1.0/60.0)*u_P[0:-6,1:-1,1:-1,:] + (3.0/20.0)*u_P[1:-5,1:-1,1:-1,:] -(3.0/4.0)*u_P[2:-4,1:-1,1:-1,:] +  (3.0/4.0)*u_P[4:-2,1:-1,1:-1,:] - (3.0/20.0)*u_P[5:-1,1:-1,1:-1,:] + (1.0/60.0)*u_P[6:,1:-1,1:-1,:])/(dx)
-    
-    u_y_P[1:-1,3:-3,1:-1,:] = ( -(1.0/60.0)*u_P[1:-1,0:-6,1:-1,:] + (3.0/20.0)*u_P[1:-1,1:-5,1:-1,:] -(3.0/4.0)*u_P[1:-1,2:-4,1:-1,0:3] +  (3.0/4.0)*u_P[1:-1,4:-2,1:-1,:] - (3.0/20.0)*u_P[1:-1,5:-1,1:-1,:] + (1.0/60.0)*u_P[1:-1,6:,1:-1,:])/(dx)       
-    
-    u_z_P[1:-1,1:-1,3:-3,:] = ( -(1.0/60.0)*u_P[1:-1,1:-1,0:-6,:] + (3.0/20.0)*u_P[1:-1,1:-1,1:-5,:] -(3.0/4.0)*u_P[1:-1,1:-1,2:-4,:] +  (3.0/4.0)*u_P[1:-1,1:-1,4:-2,:] - (3.0/20.0)*u_P[1:-1,1:-1,5:-1,:] + (1.0/60.0)*u_P[1:-1,1:-1,6:,:])/(dx)      
-    
-    #data_in[12:-12,12:-12,12:-12,4:7] = ( -(1.0/60.0)*data_in[0:-24,12:-12,12:-12,0:3] + (3.0/20.0)*data_in[4:-20,12:-12,12:-12,0:3] -(3.0/4.0)*data_in[8:-16,12:-12,12:-12,0:3] +  (3.0/4.0)*data_in[16:-8,12:-12,12:-12,0:3] - (3.0/20.0)*data_in[20:-4,12:-12,12:-12,0:3] + (1.0/60.0)*data_in[24:,12:-12,12:-12,0:3])/(Delta_LES_grid)    
-    
-
-
-    #u periodic boundary conditions
-    u_x_P[-1,:,:,:] = (u_P[0,:,:,:] - u_P[-2,:,:,:])/(2*dx)
-    u_x_P[0,:,:,:] = (u_P[1,:,:,:] - u_P[-1,:,:,:])/(2*dx)
-    
-    u_y_P[:,-1,:,:] = (u_P[:,0,:,:] - u_P[:,-2,:,:])/(2*dx)
-    u_y_P[:,0,:,:] = (u_P[:,1,:,:] - u_P[:,-1,:,:])/(2*dx)
-    
-    u_z_P[:,:,-1,:] = (u_P[:,:,0,:] - u_P[:,:,-2,:])/(2*dx)
-    u_z_P[:,:,0,:] = (u_P[:,:,1,:] - u_P[:,:,-1,:])/(2*dx)
-
-    u_xx_P[-1,:,:,:] = (u_P[0,:,:,:] -2*u_P[-1,:,:,:]+ u_P[-2,:,:,:])/(dx*dx)   
-    u_xx_P[0,:,:,:] = (u_P[1,:,:,:] -2*u_P[0,:,:,:]+ u_P[-1,:,:,:])/(dx*dx)   
-
-    u_yy_P[:,-1,:,:] = (u_P[:,0,:,:] -2*u_P[:,-1,:,:]+ u_P[:,-2,:,:])/(dx*dx)  
-    u_yy_P[:,0,:,:] = (u_P[:,1,:,:] -2*u_P[:,0,:,:]+ u_P[:,-1,:,:])/(dx*dx)  
-
-    u_zz_P[:,:,-1,:] = (u_P[:,:,0,:] -2*u_P[:,:,-1,:]+ u_P[:,:,-2,:])/(dx*dx)  
-    u_zz_P[:,:,0,:] = (u_P[:,:,1,:] -2*u_P[:,:,0,:]+ u_P[:,:,-1,:])/(dx*dx) 
-
-    u_xy_P[-1,1:-1,:,:] = (u_P[0,2:,:,:] - u_P[-2,2:,:,:] - u_P[0,0:-2,:,:] + u_P[-2,0:-2,:,:] )/(4*dx*dx)   
-    u_xy_P[0,1:-1,:,:] = (u_P[1,2:,:,:] - u_P[-1,2:,:,:] - u_P[1,0:-2,:,:] + u_P[-1,0:-2,:,:] )/(4*dx*dx)     
-    u_xy_P[1:-1,-1,:,:] = (u_P[2:,0,:,:] - u_P[0:-2,0,:,:] - u_P[2:,-2,:,:] + u_P[0:-2,-2,:,:] )/(4*dx*dx)
-    u_xy_P[1:-1,0,:,:] = (u_P[2:,1,:,:] - u_P[0:-2,1,:,:] - u_P[2:,-1,:,:] + u_P[0:-2,-1,:,:] )/(4*dx*dx)
-    u_xy_P[-1,-1,:,:] = (u_P[0,0,:,:] - u_P[-2,0,:,:] - u_P[0,-2,:,:] + u_P[-2,-2,:,:] )/(4*dx*dx)   
-    u_xy_P[-1,0,:,:] = (u_P[0,1,:,:] - u_P[-2,1,:,:] - u_P[0,-1,:,:] + u_P[-2,-1,:,:] )/(4*dx*dx)
-    u_xy_P[0,-1,:,:] = (u_P[1,0,:,:] - u_P[-1,0,:,:] - u_P[1,-2,:,:] + u_P[-1,-2,:,:] )/(4*dx*dx) 
-    u_xy_P[0,0,:,:] = (u_P[1,1,:,:] - u_P[-1,1,:,:] - u_P[1,-1,:,:] + u_P[-1,-1,:,:] )/(4*dx*dx)
-
-    u_xy_P[-1,1:-1,:,:] = (u_P[0,2:,:,:] - u_P[-2,2:,:,:] - u_P[0,0:-2,:,:] + u_P[-2,0:-2,:,:] )/(4*dx*dx)   
-    u_xy_P[0,1:-1,:,:] = (u_P[1,2:,:,:] - u_P[-1,2:,:,:] - u_P[1,0:-2,:,:] + u_P[-1,0:-2,:,:] )/(4*dx*dx)     
-    u_xy_P[1:-1,-1,:,:] = (u_P[2:,0,:,:] - u_P[0:-2,0,:,:] - u_P[2:,-2,:,:] + u_P[0:-2,-2,:,:] )/(4*dx*dx)
-    u_xy_P[1:-1,0,:,:] = (u_P[2:,1,:,:] - u_P[0:-2,1,:,:] - u_P[2:,-1,:,:] + u_P[0:-2,-1,:,:] )/(4*dx*dx)
-    u_xy_P[-1,-1,:,:] = (u_P[0,0,:,:] - u_P[-2,0,:,:] - u_P[0,-2,:,:] + u_P[-2,-2,:,:] )/(4*dx*dx)   
-    u_xy_P[-1,0,:,:] = (u_P[0,1,:,:] - u_P[-2,1,:,:] - u_P[0,-1,:,:] + u_P[-2,-1,:,:] )/(4*dx*dx)
-    u_xy_P[0,-1,:,:] = (u_P[1,0,:,:] - u_P[-1,0,:,:] - u_P[1,-2,:,:] + u_P[-1,-2,:,:] )/(4*dx*dx) 
-    u_xy_P[0,0,:,:] = (u_P[1,1,:,:] - u_P[-1,1,:,:] - u_P[1,-1,:,:] + u_P[-1,-1,:,:] )/(4*dx*dx)
-
-    return u_x_P, u_y_P, u_z_P, u_xx_P, u_yy_P, u_zz_P, u_xy_P, u_xz_P, u_yz_P
-
 
 #Constant0_P = Variable( torch.FloatTensor( Constant0_np ) )
 
 #model.eval()
 
+# ----------------------------------------------------
+# Allocate memory for state data
+# ----------------------------------------------------
 if (haveCuda):
     u_P =  torch.FloatTensor( IC_u_np ).cuda()
     v_P = torch.FloatTensor( IC_v_np ).cuda()
@@ -415,6 +230,12 @@ else:
     w_xy_P =  torch.FloatTensor( IC_w_np )
     w_yz_P =  torch.FloatTensor( IC_w_np )
 
+
+
+
+# ----------------------------------------------------
+# Sub-iteration loop
+# ----------------------------------------------------
 for iterations in range(1):
     
     time1 = time.time()
@@ -433,58 +254,11 @@ for iterations in range(1):
         
     for i in range(int(T_LES/dt_LES)):
         
-        u_x_P, u_y_P, u_z_P, u_xx_P, u_yy_P, u_zz_P, u_xy_P, u_xz_P, u_yz_P = FiniteDifference_u(u_P, u_x_P, u_y_P, u_z_P, u_xx_P, u_yy_P, u_zz_P, u_xy_P, u_xz_P, u_yz_P)
+        u_x_P, u_y_P, u_z_P, u_xx_P, u_yy_P, u_zz_P, u_xy_P, u_xz_P, u_yz_P = metric.FiniteDifference_u(dx, u_P, u_x_P, u_y_P, u_z_P, u_xx_P, u_yy_P, u_zz_P, u_xy_P, u_xz_P, u_yz_P)
         
-        v_x_P, v_y_P, v_z_P, v_xx_P, v_yy_P, v_zz_P, v_xy_P, v_xz_P, v_yz_P = FiniteDifference_u(v_P, v_x_P, v_y_P, v_z_P, v_xx_P, v_yy_P, v_zz_P, v_xy_P, v_xz_P, v_yz_P)
+        v_x_P, v_y_P, v_z_P, v_xx_P, v_yy_P, v_zz_P, v_xy_P, v_xz_P, v_yz_P = metric.FiniteDifference_u(dx, v_P, v_x_P, v_y_P, v_z_P, v_xx_P, v_yy_P, v_zz_P, v_xy_P, v_xz_P, v_yz_P)
         
-        w_x_P, w_y_P, w_z_P, w_xx_P, w_yy_P, w_zz_P, w_xy_P, w_xz_P, w_yz_P = FiniteDifference_u(w_P, w_x_P, w_y_P, w_z_P, w_xx_P, w_yy_P, w_zz_P, w_xy_P, w_xz_P, w_yz_P)
-        
-        #input_data = torch.cat( (u_P, v_P, w_P, 0.0*p_P, u_x_P, v_x_P, w_x_P,  u_y_P, v_y_P, w_y_P, u_z_P, v_z_P, w_z_P, u_xx_P, v_xx_P, w_xx_P, u_yy_P, v_yy_P, w_yy_P, u_zz_P, v_zz_P, w_zz_P, u_xy_P, v_xy_P, w_xy_P, u_xz_P, v_xz_P, w_xz_P, u_yz_P, v_yz_P, w_yz_P), 3 )
-                                 
-        #input_data = input_data/x_max_P
-        
-        #model_output = model(input_data)
-        
-        #output = (output_X_plus[:,0:1] - output_X_minus[:,0:1] )/(2*Delta_DNS_grid*100000.0) + (output_Y_plus[:,3:4] - output_Y_minus[:,3:4] )/(2*Delta_DNS_grid*100000.0) + (output_Z_plus[:,4:5] - output_Z_minus[:,4:5] )/(2*Delta_DNS_grid*100000.0)        
-        
-        #Closure_u_P[1:-1, 1:-1, 1:-1, :] = (model_output[2:,1:-1,1:-1,0:1] - model_output[0:-2,1:-1,1:-1,0:1] )/(2*dx) + (model_output[1:-1,2:,1:-1,3:4] - model_output[1:-1, 0:-2, 1:-1 ,3:4] )/(2*dx) + (model_output[1:-1, 1:-1,2:,4:5] - model_output[1:-1, 1:-1, 0:-2 ,4:5] )/(2*dx)        
-        
-        #output2 = (output_X_plus[:,3:4] - output_X_minus[:,3:4] )/(2*Delta_DNS_grid*100000.0) + (output_Y_plus[:,1:2] - output_Y_minus[:,1:2] )/(2*Delta_DNS_grid*100000.0) + (output_Z_plus[:,5:6] - output_Z_minus[:,5:6] )/(2*Delta_DNS_grid*100000.0)        
-        #Closure_v_P[1:-1, 1:-1, 1:-1, :] = (model_output[2:,1:-1, 1:-1, 3:4] - model_output[0:-2, 1:-1, 1:-1 ,3:4] )/(2*dx) + (model_output[1:-1, 2:, 1:-1,1:2] - model_output[1:-1, 0:-2, 1:-1 ,1:2] )/(2*dx) + (model_output[1:-1, 1:-1, 2:,5:6] - model_output[1:-1, 1:-1, 0:-2 ,5:6] )/(2*dx)        
-
-        #output3 = (output_X_plus[:,4:5] - output_X_minus[:,4:5] )/(2*Delta_DNS_grid*100000.0) + (output_Y_plus[:,5:6] - output_Y_minus[:,5:6] )/(2*Delta_DNS_grid*100000.0) + (output_Z_plus[:,2:3] - output_Z_minus[:,2:3] )/(2*Delta_DNS_grid*100000.0)   
-                
-        #Closure_w_P[1:-1, 1:-1, 1:-1, :] = (model_output[2:, 1:-1, 1:-1 ,4:5] - model_output[0:-2, 1:-1, 1:-1 ,4:5] )/(2*dx) + (model_output[1:-1, 2:, 1:-1,5:6] - model_output[1:-1, 0:-2, 1:-1 ,5:6] )/(2*dx) + (model_output[1:-1, 1:-1, 2:,2:3] - model_output[1:-1, 1:-1, 0:-2 ,2:3] )/(2*dx)   
-        
-        
-        
-        #u_x_P_UP, u_y_P_UP, u_z_P_UP = FiniteDifference_u_UPWIND(u_P)
-        #v_x_P_UP, v_y_P_UP, v_z_P_UP = FiniteDifference_u_UPWIND(v_P)
-        #w_x_P_UP, w_y_P_UP, w_z_P_UP = FiniteDifference_u_UPWIND(w_P)   
-        
-        #u_x_P_DOWN, u_y_P_DOWN, u_z_P_DOWN = FiniteDifference_u_DOWNWIND(u_P)
-        #v_x_P_DOWN, v_y_P_DOWN, v_z_P_DOWN = FiniteDifference_u_DOWNWIND(v_P)
-        #w_x_P_DOWN, w_y_P_DOWN, w_z_P_DOWN = FiniteDifference_u_DOWNWIND(w_P)        
-        
-        #Booleans..
-        #I_u_UP = (u_P >= 0).type(torch.FloatTensor)
-        #I_u_DOWN = (u_P < 0).type(torch.FloatTensor)
-        #I_v_UP = (v_P >= 0).type(torch.FloatTensor)
-        #I_v_DOWN = (v_P < 0).type(torch.FloatTensor)
-        #I_w_UP = (w_P >= 0).type(torch.FloatTensor)
-        #I_w_DOWN = (w_P < 0).type(torch.FloatTensor)
-
-        #u_x_P = u_x_P_UP*I_u_UP + u_x_P_DOWN*I_u_DOWN
-        #v_x_P = v_x_P_UP*I_u_UP + v_x_P_DOWN*I_u_DOWN
-        #w_x_P = w_x_P_UP*I_u_UP + w_x_P_DOWN*I_u_DOWN
-
-        #u_y_P = u_y_P_UP*I_v_UP + u_y_P_DOWN*I_v_DOWN
-        #v_y_P = v_y_P_UP*I_v_UP + v_y_P_DOWN*I_v_DOWN
-        #w_y_P = w_y_P_UP*I_v_UP + w_y_P_DOWN*I_v_DOWN   
-        
-        #u_z_P = u_z_P_UP*I_w_UP + u_z_P_DOWN*I_w_DOWN
-        #v_z_P = v_z_P_UP*I_w_UP + v_z_P_DOWN*I_w_DOWN
-        #w_z_P = w_z_P_UP*I_w_UP + w_z_P_DOWN*I_w_DOWN           
+        w_x_P, w_y_P, w_z_P, w_xx_P, w_yy_P, w_zz_P, w_xy_P, w_xz_P, w_yz_P = metric.FiniteDifference_u(dx, w_P, w_x_P, w_y_P, w_z_P, w_xx_P, w_yy_P, w_zz_P, w_xy_P, w_xz_P, w_yz_P)
  
         Nonlinear_term_u_P = u_x_P*u_P + u_y_P*v_P  + u_z_P*w_P
 
@@ -506,7 +280,7 @@ for iterations in range(1):
         
         #model_output2 = model_output.cpu()
         
-        Closure_u_P, Closure_v_P, Closure_w_P = Smagorinsky(u_x_P, u_y_P, u_z_P, v_x_P, v_y_P, v_z_P, w_x_P, w_y_P, w_z_P, Closure_u_P, Closure_v_P, Closure_w_P)
+        Closure_u_P, Closure_v_P, Closure_w_P = sfsmodel_smagorinsky.eval(dx, u_x_P, u_y_P, u_z_P, v_x_P, v_y_P, v_z_P, w_x_P, w_y_P, w_z_P, Closure_u_P, Closure_v_P, Closure_w_P)
 
         u_P = u_P + ( (mu/rho)*Diffusion_term_u -Nonlinear_term_u_P  - Closure_u_P  )*dt_LES
         
