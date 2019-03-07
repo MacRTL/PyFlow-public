@@ -6,7 +6,7 @@
 #
 # The MIT License (MIT)
 # Copyright (c) 2019 University of Illinois Board of Trustees
-
+#
 # Permission is hereby granted, free of charge, to any person 
 # obtaining a copy of this software and associated documentation 
 # files (the "Software"), to deal in the Software without 
@@ -14,10 +14,10 @@
 # copy, modify, merge, publish, distribute, sublicense, and/or 
 # sell copies of the Software, and to permit persons to whom the 
 # Software is furnished to do so, subject to the following conditions:
-
+#
 # The above copyright notice and this permission notice shall be 
 # included in all copies or substantial portions of the Software.
-
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, 
 # EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES 
 # OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND 
@@ -40,7 +40,17 @@ from torch.autograd import Variable
 import time
 import copy
 
-import dataReaderFeb2019 as dr
+import sys
+import os
+sys.path.append("../data")
+import dataReader as dr
+
+# Restart file to read
+restartFileStr = '../../examples/filtered_vol_dnsbox_1024_Lx0.045_NR_00000020_coarse'
+targetFileStr  = restartFileStr 
+
+#restartFileStr = '/projects/sciteam/baxh/Downsampled_Data_Folder/data_1024_Lx0.045_NR_Delta32_downsample8x/filtered_vol_dnsbox_1024_Lx0.045_NR_00000020_coarse'
+#targetFileStr  = '/projects/sciteam/baxh/Downsampled_Data_Folder/data_1024_Lx0.045_NR_Delta32_downsample8x/filtered_vol_dnsbox_1024_Lx0.045_NR_00000030_coarse'
 
 x_max16 = np.array( [1.63781185e+01, 1.58859625e+01, 1.42067013e+01, 1.0,
  4.07930586e+04, 6.61947031e+04, 6.84387969e+04, 7.55127656e+04,
@@ -57,23 +67,21 @@ x_max16 = x_max16[0:-9]
 
 x_max_P = torch.FloatTensor( x_max16 ).cuda()
 
-#Number of grid points
-N = 128
-
 #data = dr.readNGA('10secondsOutputGaussianFilter8xNR_Adjoint_005')
 #data = data[-1][:,:,:,0:4]
 #names,data = dr.readNGArestart('data_LESbox_128_Dx8_Lx0.045.1_2.01000E-04.filter')
 
-data = dr.readNGA('/projects/sciteam/baxh/Downsampled_Data_Folder/data_1024_Lx0.045_NR_Delta32_downsample8x/filtered_vol_dnsbox_1024_Lx0.045_NR_00000020_coarse')
+xGrid,yGrid,zGrid,names,dataTime,data = dr.readNGA(restartFileStr)
 
-data = data[-1][:,:,:,0:4]
+data = data[:,:,:,0:4]
 
-
+#Number of grid points
+N = len(xGrid)
 
 data_filtered_DNS_128 =  data
 
 
-data_target10 = dr.readNGA('/projects/sciteam/baxh/Downsampled_Data_Folder/data_1024_Lx0.045_NR_Delta32_downsample8x/filtered_vol_dnsbox_1024_Lx0.045_NR_00000030_coarse')
+data_target10 = dr.readNGA(targetFileStr)
 
 data_target10_np = data_target10[-1][:,:,:,0:4]
 
@@ -124,10 +132,10 @@ model = ClosureModel2()
 model_name = 'LES_model_NR_March2019'
 
 
-model.load_state_dict(torch.load(model_name))
+#model.load_state_dict(torch.load(model_name))
 
        
-model.cuda()
+#model.cuda()
 
 #Set up some vectors which will be helpful for the PyTorch finite difference implementation..
 
@@ -305,7 +313,7 @@ def FiniteDifference_u(u_P, u_x_P, u_y_P, u_z_P, u_xx_P, u_yy_P, u_zz_P, u_xy_P,
 
 #Constant0_P = Variable( torch.FloatTensor( Constant0_np ) )
 
-model.eval()
+#model.eval()
 
 for iterations in range(1):
     
