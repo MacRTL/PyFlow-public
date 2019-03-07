@@ -52,6 +52,11 @@ targetFileStr  = restartFileStr
 #restartFileStr = '/projects/sciteam/baxh/Downsampled_Data_Folder/data_1024_Lx0.045_NR_Delta32_downsample8x/filtered_vol_dnsbox_1024_Lx0.045_NR_00000020_coarse'
 #targetFileStr  = '/projects/sciteam/baxh/Downsampled_Data_Folder/data_1024_Lx0.045_NR_Delta32_downsample8x/filtered_vol_dnsbox_1024_Lx0.045_NR_00000030_coarse'
 
+# Torch state
+haveCuda = torch.cuda.is_available()
+
+
+# Normalization weights
 x_max16 = np.array( [1.63781185e+01, 1.58859625e+01, 1.42067013e+01, 1.0,
  4.07930586e+04, 6.61947031e+04, 6.84387969e+04, 7.55127656e+04,
  4.52174883e+04, 6.18495938e+04, 6.63429844e+04, 6.53548398e+04,
@@ -64,8 +69,6 @@ x_max16 = np.array( [1.63781185e+01, 1.58859625e+01, 1.42067013e+01, 1.0,
  7.01258421e-01, 9.08308625e-01, 7.01258421e-01, 9.65657115e-01] )
 
 x_max16 = x_max16[0:-9]
-
-x_max_P = torch.FloatTensor( x_max16 ).cuda()
 
 #data = dr.readNGA('10secondsOutputGaussianFilter8xNR_Adjoint_005')
 #data = data[-1][:,:,:,0:4]
@@ -85,7 +88,15 @@ data_target10 = dr.readNGA(targetFileStr)
 
 data_target10_np = data_target10[-1][:,:,:,0:4]
 
-target_P = torch.FloatTensor( data_target10_np ).cuda()
+
+
+
+if (haveCuda):
+    x_max_P = torch.FloatTensor( x_max16 ).cuda()
+    target_P = torch.FloatTensor( data_target10_np ).cuda()
+else:
+    x_max_P = torch.FloatTensor( x_max16 )
+    target_P = torch.FloatTensor( data_target10_np )
 
 
 
@@ -315,15 +326,7 @@ def FiniteDifference_u(u_P, u_x_P, u_y_P, u_z_P, u_xx_P, u_yy_P, u_zz_P, u_xy_P,
 
 #model.eval()
 
-for iterations in range(1):
-    
-    time1 = time.time()
-    
-    #for param_group in optimizer.param_groups:
-    #        param_group['lr'] = 0.1*LR
-    
-    #optimizer.zero_grad()
-    
+if (haveCuda):
     u_P =  torch.FloatTensor( IC_u_np ).cuda()
     v_P = torch.FloatTensor( IC_v_np ).cuda()
     w_P = torch.FloatTensor( IC_w_np ).cuda()
@@ -366,7 +369,60 @@ for iterations in range(1):
     w_zz_P =  torch.FloatTensor( IC_w_np ).cuda()
     w_xz_P =  torch.FloatTensor( IC_w_np ).cuda()
     w_xy_P =  torch.FloatTensor( IC_w_np ).cuda()
-    w_yz_P =  torch.FloatTensor( IC_w_np ).cuda()    
+    w_yz_P =  torch.FloatTensor( IC_w_np ).cuda()
+else:
+    u_P =  torch.FloatTensor( IC_u_np )
+    v_P = torch.FloatTensor( IC_v_np )
+    w_P = torch.FloatTensor( IC_w_np )
+    
+    Closure_u_P =  torch.FloatTensor( IC_zeros_np )
+    Closure_v_P = torch.FloatTensor( IC_zeros_np )
+    Closure_w_P = torch.FloatTensor( IC_zeros_np )    
+    
+    p_P =  torch.FloatTensor( IC_zeros_np )
+    p_OLD_P =  torch.FloatTensor( IC_zeros_np)
+    p_x_P =  torch.FloatTensor( IC_p_np )
+    p_y_P =  torch.FloatTensor( IC_p_np )
+    p_z_P =  torch.FloatTensor( IC_p_np )
+    
+    u_x_P =  torch.FloatTensor( IC_u_np )
+    u_y_P =  torch.FloatTensor( IC_u_np )
+    u_z_P =  torch.FloatTensor( IC_u_np )
+    u_xx_P =  torch.FloatTensor( IC_u_np )
+    u_yy_P =  torch.FloatTensor( IC_u_np )
+    u_zz_P =  torch.FloatTensor( IC_u_np )
+    u_xz_P =  torch.FloatTensor( IC_u_np )
+    u_xy_P =  torch.FloatTensor( IC_u_np )
+    u_yz_P =  torch.FloatTensor( IC_u_np )
+    
+    v_x_P =  torch.FloatTensor( IC_v_np )
+    v_y_P =  torch.FloatTensor( IC_v_np )
+    v_z_P =  torch.FloatTensor( IC_v_np )
+    v_xx_P =  torch.FloatTensor( IC_v_np )
+    v_yy_P =  torch.FloatTensor( IC_v_np )
+    v_zz_P =  torch.FloatTensor( IC_v_np )
+    v_xz_P =  torch.FloatTensor( IC_v_np )
+    v_xy_P =  torch.FloatTensor( IC_v_np )
+    v_yz_P =  torch.FloatTensor( IC_v_np )
+    
+    w_x_P =  torch.FloatTensor( IC_w_np )
+    w_y_P =  torch.FloatTensor( IC_w_np )
+    w_z_P =  torch.FloatTensor( IC_w_np )
+    w_xx_P =  torch.FloatTensor( IC_w_np )
+    w_yy_P =  torch.FloatTensor( IC_w_np )
+    w_zz_P =  torch.FloatTensor( IC_w_np )
+    w_xz_P =  torch.FloatTensor( IC_w_np )
+    w_xy_P =  torch.FloatTensor( IC_w_np )
+    w_yz_P =  torch.FloatTensor( IC_w_np )
+
+for iterations in range(1):
+    
+    time1 = time.time()
+    
+    #for param_group in optimizer.param_groups:
+    #        param_group['lr'] = 0.1*LR
+    
+    #optimizer.zero_grad()
 
     #u_P = Variable( torch.FloatTensor( IC_u_np ) )
     #v_P = Variable( torch.FloatTensor( IC_v_np ) )
