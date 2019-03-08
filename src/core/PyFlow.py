@@ -55,6 +55,13 @@ import sfsmodel_nn
 import sfsmodel_smagorinsky
 
 
+####### TODO
+#  1. Staggered grid
+#  2. Pressure correction
+#  3. RK3
+#  4. Krylov
+
+
 # ----------------------------------------------------
 # User-specified parameters
 # ----------------------------------------------------
@@ -68,10 +75,14 @@ mu  = 1.8678e-5
 rho = 1.2
 
 # Simulation options
-FD_order = 2
+genericOrder = 2
 Num_pressure_iterations = 100
-dt_LES = 0.0000025
-T_LES = 1*0.0001
+simDt    = 2.5e-6
+numIt    = 20
+stopTime = numIt*simDt
+SFSModel = True
+
+# Simulation geometry
 
 
 
@@ -80,7 +91,7 @@ T_LES = 1*0.0001
 
 
 # ----------------------------------------------------
-# Initialize data files
+# Read data files
 # ----------------------------------------------------
 # Read restart data file
 xGrid,yGrid,zGrid,names,dataTime,data = dr.readNGA(restartFileStr)
@@ -91,6 +102,8 @@ del data
 
 # Grid parameters
 #   Currently configured for uniform grid
+#   [JFM] move this to its own module based on dataClasses
+#
 Nx = len(xGrid); Lx = xGrid[-1]-xGrid[0]; dx = Lx/float(Nx)
 Ny = len(yGrid); Ly = yGrid[-1]-yGrid[0]; dy = Ly/float(Ny)
 Nz = len(zGrid); Lz = zGrid[-1]-zGrid[0]; dz = Lz/float(Nz)
@@ -127,10 +140,6 @@ model_name = 'LES_model_NR_March2019'
     #model.cuda()
 
 
-#Set up some vectors which will be helpful for the PyTorch finite difference implementation..
-
-#initial condition
-
 # ----------------------------------------------------
 # Set up initial condition
 # ----------------------------------------------------
@@ -144,12 +153,6 @@ del data_restart
 
 IC_zeros_np = np.zeros( (Nx,Ny,Nz) )
 
-
-    
-
-#Constant0_P = Variable( torch.FloatTensor( Constant0_np ) )
-
-#model.eval()
 
 # ----------------------------------------------------
 # Allocate memory for state data
@@ -247,7 +250,7 @@ else:
 
 
 # ----------------------------------------------------
-# Sub-iteration loop
+# Simulation loop
 # ----------------------------------------------------
 for iterations in range(1):
     
@@ -262,16 +265,31 @@ for iterations in range(1):
     #v_P = Variable( torch.FloatTensor( IC_v_np ) )
     #
     Loss = 0.0
+
+    # Iteration counter and simulation time
+    itCount = 0
+    simTime = 0.0
+
+    # Write the stdout header
+    headStr = "  {:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}"
+    print(headStr.format("Step","Time","max CFL","max U","max V","max W"))
+
     
-    #Chorin's projection method for solution of incompressible Navier-Stokes PDE with periodic boundary conditions in a box. 
+    #Chorin's projection method for solution of incompressible Navier-Stokes PDE with periodic boundary conditions in a box.
+    
+    # Main iteration loop
+    while (simTime < stopTime):
+
+        # [JFM] need new sub-iteration loop
         
-    for i in range(int(T_LES/dt_LES)):
+        # ----------------------------------------------------
+        # Velocity rhs
+        # ----------------------------------------------------
+        u_x_P, u_y_P, u_z_P, u_xx_P, u_yy_P, u_zz_P, u_xy_P, u_xz_P, u_yz_P = metric.FiniteDifference_u(genericOrder, dx, u_P, u_x_P, u_y_P, u_z_P, u_xx_P, u_yy_P, u_zz_P, u_xy_P, u_xz_P, u_yz_P)
         
-        u_x_P, u_y_P, u_z_P, u_xx_P, u_yy_P, u_zz_P, u_xy_P, u_xz_P, u_yz_P = metric.FiniteDifference_u(dx, u_P, u_x_P, u_y_P, u_z_P, u_xx_P, u_yy_P, u_zz_P, u_xy_P, u_xz_P, u_yz_P)
+        v_x_P, v_y_P, v_z_P, v_xx_P, v_yy_P, v_zz_P, v_xy_P, v_xz_P, v_yz_P = metric.FiniteDifference_u(genericOrder, dx, v_P, v_x_P, v_y_P, v_z_P, v_xx_P, v_yy_P, v_zz_P, v_xy_P, v_xz_P, v_yz_P)
         
-        v_x_P, v_y_P, v_z_P, v_xx_P, v_yy_P, v_zz_P, v_xy_P, v_xz_P, v_yz_P = metric.FiniteDifference_u(dx, v_P, v_x_P, v_y_P, v_z_P, v_xx_P, v_yy_P, v_zz_P, v_xy_P, v_xz_P, v_yz_P)
-        
-        w_x_P, w_y_P, w_z_P, w_xx_P, w_yy_P, w_zz_P, w_xy_P, w_xz_P, w_yz_P = metric.FiniteDifference_u(dx, w_P, w_x_P, w_y_P, w_z_P, w_xx_P, w_yy_P, w_zz_P, w_xy_P, w_xz_P, w_yz_P)
+        w_x_P, w_y_P, w_z_P, w_xx_P, w_yy_P, w_zz_P, w_xy_P, w_xz_P, w_yz_P = metric.FiniteDifference_u(genericOrder, dx, w_P, w_x_P, w_y_P, w_z_P, w_xx_P, w_yy_P, w_zz_P, w_xy_P, w_xz_P, w_yz_P)
  
         Nonlinear_term_u_P = u_x_P*u_P + u_y_P*v_P  + u_z_P*w_P
 
@@ -292,18 +310,32 @@ for iterations in range(1):
         #model_output = model( u_P)
         
         #model_output2 = model_output.cpu()
-        
-        Closure_u_P, Closure_v_P, Closure_w_P = sfsmodel_smagorinsky.eval(dx, u_x_P, u_y_P, u_z_P, v_x_P, v_y_P, v_z_P, w_x_P, w_y_P, w_z_P, Closure_u_P, Closure_v_P, Closure_w_P)
 
-        u_P = u_P + ( (mu/rho)*Diffusion_term_u -Nonlinear_term_u_P  - Closure_u_P  )*dt_LES
         
-        v_P = v_P + ( (mu/rho)*Diffusion_term_v -Nonlinear_term_v_P  - Closure_v_P   )*dt_LES
+        # ----------------------------------------------------
+        # SFS models
+        # ----------------------------------------------------
+        # [JFM] Probably need to move this after the pressure correction
+        if (SFSModel):
+            Closure_u_P, Closure_v_P, Closure_w_P = sfsmodel_smagorinsky.eval(dx, u_x_P, u_y_P, u_z_P, v_x_P, v_y_P,
+                                                                              v_z_P, w_x_P, w_y_P, w_z_P,
+                                                                              Closure_u_P, Closure_v_P, Closure_w_P)
+        else:
+            Closure_u_P = 0.0
+            Closure_v_P = 0.0
+            Closure_w_P = 0.0
+
+        u_P = u_P + ( (mu/rho)*Diffusion_term_u -Nonlinear_term_u_P  - Closure_u_P  )*simDt
+        v_P = v_P + ( (mu/rho)*Diffusion_term_v -Nonlinear_term_v_P  - Closure_v_P  )*simDt
+        w_P = w_P + ( (mu/rho)*Diffusion_term_w -Nonlinear_term_w_P  - Closure_w_P  )*simDt
         
-        w_P = w_P + ( (mu/rho)*Diffusion_term_w -Nonlinear_term_w_P  - Closure_w_P   )*dt_LES
+
         
-        
-        
-        #Update pressure using an iteration...
+        # ----------------------------------------------------
+        # Pressure iteration
+        # ----------------------------------------------------
+
+        # [JFM] move this to its own module
         
         Source_term = rho*dx*dx*(u_x_P + v_y_P + w_z_P)
         
@@ -319,35 +351,84 @@ for iterations in range(1):
             Pressure_update_j3 = p_OLD_P[1:-1,1:-1,2:] + p_OLD_P[1:-1,1:-1,0:-2]
 
             #interior of domain
-            p_P[1:-1, 1:-1,1:-1] = (1.0/6.0)*( Pressure_update_j1 + Pressure_update_j2  + Pressure_update_j3 - Source_term[1:-1,1:-1,1:-1])
+            p_P[1:-1, 1:-1,1:-1] = (1.0/6.0)*( Pressure_update_j1 + Pressure_update_j2
+                                               + Pressure_update_j3 - Source_term[1:-1,1:-1,1:-1])
             
             #Edges of domain
-            p_P[0, 1:-1,1:-1] = (1.0/6.0)*( (p_OLD_P[1,1:-1,1:-1] + p_OLD_P[-1,1:-1,1:-1])  + (p_OLD_P[0,2:,1:-1] + p_OLD_P[0,0:-2,1:-1] )  +  (p_OLD_P[0,1:-1,2:] + p_OLD_P[0,1:-1,0:-2])      - Source_term[0,1:-1,1:-1])
-            p_P[-1, 1:-1,1:-1] = (1.0/6.0)*( (p_OLD_P[0,1:-1,1:-1] + p_OLD_P[-2,1:-1,1:-1])  + (p_OLD_P[-1,2:,1:-1] + p_OLD_P[-1,0:-2,1:-1] )  +  (p_OLD_P[-1,1:-1,2:] + p_OLD_P[-1,1:-1,0:-2])      - Source_term[-1,1:-1,1:-1])  
+            p_P[0, 1:-1,1:-1] = (1.0/6.0)*( p_OLD_P[1,1:-1,1:-1] + p_OLD_P[-1,1:-1,1:-1] 
+                                            + p_OLD_P[0,2:,1:-1] + p_OLD_P[0,0:-2,1:-1]  
+                                            + p_OLD_P[0,1:-1,2:] + p_OLD_P[0,1:-1,0:-2]  
+                                            - Source_term[0,1:-1,1:-1])
             
-            p_P[1:-1, 0,1:-1] = (1.0/6.0)*( p_OLD_P[2:,0,1:-1] + p_OLD_P[0:-2,0,1:-1] + p_OLD_P[1:-1,1,1:-1] + p_OLD_P[1:-1,-1,1:-1]  + p_OLD_P[1:-1,0,2:] + p_OLD_P[1:-1,0,0:-2]      - Source_term[1:-1,0,1:-1])
-            p_P[1:-1, -1,1:-1] = (1.0/6.0)*( p_OLD_P[2:,-1,1:-1] + p_OLD_P[0:-2,-1,1:-1] + p_OLD_P[1:-1,0,1:-1] + p_OLD_P[1:-1,-2,1:-1]  + p_OLD_P[1:-1,-1,2:] + p_OLD_P[1:-1,-1,0:-2]      - Source_term[1:-1,-1,1:-1])            
+            p_P[-1, 1:-1,1:-1] = (1.0/6.0)*( p_OLD_P[0,1:-1,1:-1] + p_OLD_P[-2,1:-1,1:-1]
+                                             + p_OLD_P[-1,2:,1:-1]+ p_OLD_P[-1,0:-2,1:-1] 
+                                             + p_OLD_P[-1,1:-1,2:] + p_OLD_P[-1,1:-1,0:-2]
+                                             - Source_term[-1,1:-1,1:-1])  
             
-            p_P[1:-1, 1:-1,0] = (1.0/6.0)*( p_OLD_P[2:,1:-1,0] + p_OLD_P[0:-2,1:-1,0]+ p_OLD_P[1:-1,2:,0] + p_OLD_P[1:-1,0:-2,0] + p_OLD_P[1:-1,1:-1,1] + p_OLD_P[1:-1,1:-1,-1]  - Source_term[1:-1,1:-1,0]) 
-            p_P[1:-1, 1:-1,-1] = (1.0/6.0)*( p_OLD_P[2:,1:-1,-1] + p_OLD_P[0:-2,1:-1,-1]+ p_OLD_P[1:-1,2:,-1] + p_OLD_P[1:-1,0:-2,-1] + p_OLD_P[1:-1,1:-1,0] + p_OLD_P[1:-1,1:-1,-2]  - Source_term[1:-1,1:-1,-1])            
+            p_P[1:-1, 0,1:-1] = (1.0/6.0)*( p_OLD_P[2:,0,1:-1] + p_OLD_P[0:-2,0,1:-1]
+                                            + p_OLD_P[1:-1,1,1:-1] + p_OLD_P[1:-1,-1,1:-1]
+                                            + p_OLD_P[1:-1,0,2:] + p_OLD_P[1:-1,0,0:-2]
+                                            - Source_term[1:-1,0,1:-1])
+            
+            p_P[1:-1, -1,1:-1] = (1.0/6.0)*( p_OLD_P[2:,-1,1:-1] + p_OLD_P[0:-2,-1,1:-1]
+                                             + p_OLD_P[1:-1,0,1:-1] + p_OLD_P[1:-1,-2,1:-1]
+                                             + p_OLD_P[1:-1,-1,2:] + p_OLD_P[1:-1,-1,0:-2]
+                                             - Source_term[1:-1,-1,1:-1])            
+            
+            p_P[1:-1, 1:-1,0] = (1.0/6.0)*( p_OLD_P[2:,1:-1,0] + p_OLD_P[0:-2,1:-1,0]
+                                            + p_OLD_P[1:-1,2:,0] + p_OLD_P[1:-1,0:-2,0]
+                                            + p_OLD_P[1:-1,1:-1,1] + p_OLD_P[1:-1,1:-1,-1]
+                                            - Source_term[1:-1,1:-1,0])
+            
+            p_P[1:-1, 1:-1,-1] = (1.0/6.0)*( p_OLD_P[2:,1:-1,-1] + p_OLD_P[0:-2,1:-1,-1]
+                                             + p_OLD_P[1:-1,2:,-1] + p_OLD_P[1:-1,0:-2,-1]
+                                             + p_OLD_P[1:-1,1:-1,0] + p_OLD_P[1:-1,1:-1,-2]
+                                             - Source_term[1:-1,1:-1,-1])            
             
             #Corners of domain
-            p_P[0, 0,0] = (1.0/6.0)*( (p_OLD_P[1,0,0] + p_OLD_P[-1,0,0])  + (p_OLD_P[0,1,0] + p_OLD_P[0,-1,0] )  +  (p_OLD_P[0,0,1] + p_OLD_P[0,0,-1]) - Source_term[0,0,0])
-            p_P[0, 0,-1] = (1.0/6.0)*( (p_OLD_P[1,0,-1] + p_OLD_P[-1,0,-1])  + (p_OLD_P[0,1,-1] + p_OLD_P[0,-1,-1] )  +  (p_OLD_P[0,0,0] + p_OLD_P[0,0,-2]) - Source_term[0,0,-1])    
+            p_P[0, 0,0] = (1.0/6.0)*( p_OLD_P[1,0,0] + p_OLD_P[-1,0,0]
+                                      + p_OLD_P[0,1,0] + p_OLD_P[0,-1,0] 
+                                      + p_OLD_P[0,0,1] + p_OLD_P[0,0,-1]
+                                      - Source_term[0,0,0] )
             
-            p_P[0, -1,0] = (1.0/6.0)*( (p_OLD_P[1,-1,0] + p_OLD_P[-1,-1,0])  + (p_OLD_P[0,0,0] + p_OLD_P[0,-2,0] )  +  (p_OLD_P[0,-1,1] + p_OLD_P[0,-1,-1]) - Source_term[0,-1,0])     
-            p_P[0, -1,-1] = (1.0/6.0)*( (p_OLD_P[1,-1,-1] + p_OLD_P[-1,-1,-1])  + (p_OLD_P[0,0,-1] + p_OLD_P[0,-2,-1] )  +  (p_OLD_P[0,-1,0] + p_OLD_P[0,-1,-2]) - Source_term[0,-1,-1])    
+            p_P[0, 0,-1] = (1.0/6.0)*( p_OLD_P[1,0,-1] + p_OLD_P[-1,0,-1]
+                                       + p_OLD_P[0,1,-1] + p_OLD_P[0,-1,-1] 
+                                       + p_OLD_P[0,0,0] + p_OLD_P[0,0,-2]
+                                       - Source_term[0,0,-1])    
+            
+            p_P[0, -1,0] = (1.0/6.0)*( p_OLD_P[1,-1,0] + p_OLD_P[-1,-1,0]
+                                       + p_OLD_P[0,0,0] + p_OLD_P[0,-2,0] 
+                                       + p_OLD_P[0,-1,1] + p_OLD_P[0,-1,-1]
+                                       - Source_term[0,-1,0])
+            
+            p_P[0, -1,-1] = (1.0/6.0)*( p_OLD_P[1,-1,-1] + p_OLD_P[-1,-1,-1]
+                                        + p_OLD_P[0,0,-1] + p_OLD_P[0,-2,-1] 
+                                        + p_OLD_P[0,-1,0] + p_OLD_P[0,-1,-2]
+                                        - Source_term[0,-1,-1])    
             
             
-            p_P[-1, 0,0] = (1.0/6.0)*( (p_OLD_P[0,0,0] + p_OLD_P[-2,0,0])  + (p_OLD_P[-1,1,0] + p_OLD_P[-1,-1,0] )  +  (p_OLD_P[-1,0,1] + p_OLD_P[-1,0,-1]) - Source_term[-1,0,0])     
-            p_P[-1, 0,-1] = (1.0/6.0)*( (p_OLD_P[0,0,-1] + p_OLD_P[-2,0,-1])  + (p_OLD_P[-1,1,-1] + p_OLD_P[-1,-1,-1] )  +  (p_OLD_P[-1,0,0] + p_OLD_P[-1,0,-2]) - Source_term[-1,0,-1])              
+            p_P[-1, 0,0] = (1.0/6.0)*( p_OLD_P[0,0,0] + p_OLD_P[-2,0,0]
+                                       + p_OLD_P[-1,1,0] + p_OLD_P[-1,-1,0]
+                                       + p_OLD_P[-1,0,1] + p_OLD_P[-1,0,-1]
+                                       - Source_term[-1,0,0])
+            
+            p_P[-1, 0,-1] = (1.0/6.0)*( p_OLD_P[0,0,-1] + p_OLD_P[-2,0,-1]
+                                        + p_OLD_P[-1,1,-1] + p_OLD_P[-1,-1,-1]
+                                        + p_OLD_P[-1,0,0] + p_OLD_P[-1,0,-2]
+                                        - Source_term[-1,0,-1])              
             
             #Need to still work on this...!
-            p_P[-1, -1,0] = (1.0/6.0)*( (p_OLD_P[0,-1,0] + p_OLD_P[-2,-1,0])  + (p_OLD_P[-1,0,0] + p_OLD_P[-1,-2,0] )  +  (p_OLD_P[-1,-1,1] + p_OLD_P[-1,-1,-1]) - Source_term[-1,-1,0])     
-            p_P[-1, -1,-1] = (1.0/6.0)*( (p_OLD_P[0,-1,-1] + p_OLD_P[-2,-1,-1])  + (p_OLD_P[-1,0,-1] + p_OLD_P[-1,-2,-1] )  +  (p_OLD_P[-1,-1,0] + p_OLD_P[-1,-1,-2]) - Source_term[-1,-1,-1])   
+            p_P[-1, -1,0] = (1.0/6.0)*( p_OLD_P[0,-1,0] + p_OLD_P[-2,-1,0]
+                                        + p_OLD_P[-1,0,0] + p_OLD_P[-1,-2,0] 
+                                        + p_OLD_P[-1,-1,1] + p_OLD_P[-1,-1,-1]
+                                        - Source_term[-1,-1,0])
             
+            p_P[-1, -1,-1] = (1.0/6.0)*( p_OLD_P[0,-1,-1] + p_OLD_P[-2,-1,-1]
+                                         + p_OLD_P[-1,0,-1] + p_OLD_P[-1,-2,-1]
+                                         + p_OLD_P[-1,-1,0] + p_OLD_P[-1,-1,-2]
+                                         - Source_term[-1,-1,-1])   
 
-        
+            
         #pressure gradients
         p_x_P[1:-1,:,:] = (p_P[2:,:, :] - p_P[0:-2,:,:])/(2*dx)
         p_x_P[-1,:,:] = (p_P[0,:, :] - p_P[-2,:,:])/(2*dx)
@@ -362,12 +443,40 @@ for iterations in range(1):
         p_z_P[:,:,0] = (p_P[:,:,1] - p_P[:,:,-1])/(2*dx)
        
         
-        #Update velocities using updated pressure...
-        u_P = u_P - p_x_P*(1.0/rho)
-        v_P = v_P - p_y_P*(1.0/rho)
-        w_P = w_P - p_z_P*(1.0/rho)
-        
+        # ----------------------------------------------------
+        # Pressure correction
+        # ----------------------------------------------------
+        u_P = u_P - p_x_P/rho
+        v_P = v_P - p_y_P/rho
+        w_P = w_P - p_z_P/rho
 
+        
+        # ----------------------------------------------------
+        # Post-step
+        # ----------------------------------------------------
+        # Compute stats
+        maxU = torch.max(u_P)
+        maxV = torch.max(v_P)
+        maxW = torch.max(w_P)
+        maxCFL = max((maxU/dx,maxV/dy,maxW/dz))*simDt
+
+        # Update the time
+        itCount += 1
+        simTime += simDt
+        
+        # Write stats
+        lineStr = "  {:10d}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}"
+        print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW))
+
+        ## END OF ITERATION LOOP
+
+
+
+
+        
+    # ----------------------------------------------------
+    # Post-simulation tasks
+    # ----------------------------------------------------
         #Diff = u_P - Variable( torch.FloatTensor( np.matrix( u_DNS_downsamples[T_factor*(i+1)]).T ) )
     Diff = u_P - target_P
     Loss_i = torch.mean( torch.abs( Diff ) )
@@ -383,3 +492,6 @@ for iterations in range(1):
     error = np.mean(np.abs( u_P.cpu().numpy() -  target_P.cpu().numpy() ) )
     
     print(iterations, test, error,  time_elapsed)
+
+    # Print a pretty picture
+    dr.plotData(u_P[:,:,int(Nz/2)].cpu().numpy(),"state_U_"+str(itCount))

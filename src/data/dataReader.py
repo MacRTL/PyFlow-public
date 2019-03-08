@@ -33,7 +33,9 @@ import sys
 import numpy as np
 import struct
 import array as arr
-import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use("TkAgg")
+from matplotlib import pyplot as plt
 import matplotlib.cm as cm
 
 from mpi4py import MPI
@@ -42,7 +44,9 @@ from mpi4py import MPI
 def plotData(data,fName):
     # Plot 2D data
     fig = plt.figure(figsize=(6,3))
-    plt.imshow(data.astype(np.float64), interpolation='nearest', cmap=cm.gist_rainbow)
+    plt.imshow(data.astype(np.float64),
+               interpolation='nearest',
+               cmap=cm.gist_rainbow)
     plt.colorbar()
     fig.tight_layout()
     fig.savefig(fName+".png", format="png")
