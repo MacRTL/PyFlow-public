@@ -74,9 +74,9 @@ import sfsmodel_smagorinsky
 # ----------------------------------------------------
 
 # Simulation geometry
-#   Options: restart, periodicGaussian
-#configName = "periodicGaussian"
-configName = "channel"
+#   Options: restart, periodicGaussian, notAchannel
+configName = "periodicGaussian"
+#configName = "notAchannel"
 configNx   = 64
 configNy   = 64
 configNz   = 64
@@ -93,7 +93,7 @@ mu  = 1.8678e-5
 rho = 1.2
 
 # Time step
-simDt    = 1.25e-4
+simDt    = 1.25e-3
 numIt    = 50
 stopTime = numIt*simDt
 
@@ -104,8 +104,7 @@ SFSModel = False
 #   Options: Euler, RK4
 solverName   = "RK4"
 genericOrder = 2
-Num_pressure_iterations = 800
-#equationMode = "scalar"
+Num_pressure_iterations = 1000
 equationMode = "NS"
 
 # Comparison options
@@ -152,8 +151,8 @@ elif (configName=='periodicGaussian'):
     data_IC[:,:,:,3] = 0.0
     del gaussianBump
 
-elif (configName=='channel'):
-    # Not a real channel
+elif (configName=='notAchannel'):
+    # Not a channel; periodic BCs at +/- y; no walls
     # Initialize the uniform grid
     xGrid = np.linspace(-0.5*configLx,0.5*configLx,configNx)
     yGrid = np.linspace(-0.5*configLy,0.5*configLy,configNy)
@@ -162,11 +161,10 @@ elif (configName=='channel'):
     uMax = 2.0
     vMax = 0.0
     wMax = 0.0
-    amp  = 0.0001
+    amp  = 0.01
     parabolaX = ( 6.0*(yGrid[np.newaxis,:,np.newaxis] + 0.5*configLy)
                   *(0.5*configLy - yGrid[np.newaxis,:,np.newaxis])
                   /configLy**2 )
-    #parabolaX /= np.max(parabolaX)
     Unorm = np.sqrt(uMax**2 + wMax**2)
     data_IC = np.zeros((configNx,configNy,configNz,4),dtype='float64')
     data_IC[:,:,:,0] = (uMax * parabolaX
@@ -460,18 +458,11 @@ for iterations in range(1):
             # Initial guess is p from previous time step
             p_OLD_P.copy_(state_p_P.var)
             
-            #Pressure_update_j1 = p_OLD_P[2:,1:-1,1:-1] + p_OLD_P[0:-2,1:-1,1:-1]
-            #Pressure_update_j2 = p_OLD_P[1:-1,2:,1:-1] + p_OLD_P[1:-1,0:-2,1:-1]
-            #Pressure_update_j3 = p_OLD_P[1:-1,1:-1,2:] + p_OLD_P[1:-1,1:-1,0:-2]
-            
             # Interior points
             state_p_P.var[1:-1,1:-1,1:-1] = DInv*( FFacX* p_OLD_P[2:,1:-1,1:-1] + EFacX*p_OLD_P[:-2,1:-1,1:-1]
                                                    +FFacY*p_OLD_P[1:-1,2:,1:-1] + EFacY*p_OLD_P[1:-1,:-2,1:-1]
                                                    +FFacZ*p_OLD_P[1:-1,1:-1,2:] + EFacZ*p_OLD_P[1:-1,1:-1,:-2]
                                                    + source_P[1:-1,1:-1,1:-1] )
-            
-            #state_p_P.var[1:-1,1:-1,1:-1] = (1.0/6.0)*( Pressure_update_j1 + Pressure_update_j2
-            #                                   + Pressure_update_j3 - source_P[1:-1,1:-1,1:-1])
 
             # Boundary conditions - Neumann zero normal gradient
             # -x face
@@ -535,18 +526,6 @@ for iterations in range(1):
 
         # Compute pressure gradients
         metric.grad_p(state_p_P)
-        
-        #p_x_P[1:-1,:,:] = (p_P[2:,:, :] - p_P[0:-2,:,:])/(2*geometry.dx)
-        #p_x_P[-1,:,:] = (p_P[0,:, :] - p_P[-2,:,:])/(2*geometry.dx)
-        #p_x_P[0,:,:] = (p_P[1,:, :] - p_P[-1,:,:])/(2*geometry.dx)
-        
-        #p_y_P[:,1:-1,:] = (p_P[:,2:,:] - p_P[:,0:-2,:])/(2*geometry.dx)
-        #p_y_P[:,-1,:] = (p_P[:,0,:] - p_P[:,-2,:])/(2*geometry.dx)
-        #p_y_P[:,0,:] = (p_P[:,1,:] - p_P[:,-1,:])/(2*geometry.dx)
-        
-        #p_z_P[:,:,1:-1] = (p_P[:,:,2:] - p_P[:,:,0:-2])/(2*geometry.dx)
-        #p_z_P[:,:,-1] = (p_P[:,:,0] - p_P[:,:,-2])/(2*geometry.dx)
-        #p_z_P[:,:,0] = (p_P[:,:,1] - p_P[:,:,-1])/(2*geometry.dx)
 
         
         # ----------------------------------------------------
