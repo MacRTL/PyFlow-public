@@ -75,7 +75,8 @@ import sfsmodel_smagorinsky
 
 # Simulation geometry
 #   Options: restart, periodicGaussian, notAchannel
-configName = "periodicGaussian"
+configName = "restart"
+#configName = "periodicGaussian"
 #configName = "notAchannel"
 configNx   = 64
 configNy   = 64
@@ -98,7 +99,7 @@ numIt    = 50
 stopTime = numIt*simDt
 
 # SFS model
-SFSModel = False
+SFSModel = True
 
 # Solver settings
 #   Options: Euler, RK4
@@ -125,6 +126,9 @@ if (useTargetData):
 if (configName=='restart'):
     # Read grid and state data from the restart file
     xGrid,yGrid,zGrid,names,dataTime,data = dr.readNGA(restartFileStr)
+    configNx = len(xGrid)
+    configNy = len(yGrid)
+    configNz = len(zGrid)
     data_IC = data[:,:,:,0:4]
     
     # Clean up
@@ -240,10 +244,11 @@ state_v_P = state.data_P(IC_v_np,IC_zeros_np)
 state_w_P = state.data_P(IC_w_np,IC_zeros_np)
 state_p_P = state.data_P(IC_zeros_np,IC_zeros_np)
 
-# TEMPORARY STATES FOR ADVECTION-DIFFUSION TEST
-state_uConv_P = state.data_P(uMax*IC_ones_np,IC_zeros_np)
-state_vConv_P = state.data_P(vMax*IC_ones_np,IC_zeros_np)
-state_wConv_P = state.data_P(wMax*IC_ones_np,IC_zeros_np)
+if (equationMode=='scalar'):
+    # TEMPORARY STATES FOR ADVECTION-DIFFUSION TEST
+    state_uConv_P = state.data_P(uMax*IC_ones_np,IC_zeros_np)
+    state_vConv_P = state.data_P(vMax*IC_ones_np,IC_zeros_np)
+    state_wConv_P = state.data_P(wMax*IC_ones_np,IC_zeros_np)
 
 # Need a temporary velocity state for RK solvers
 if (solverName[:-1]=="RK"):
@@ -353,9 +358,8 @@ for iterations in range(1):
 
         # Do we use an SFS model?
         if (SFSModel):
-            Closure_u_P, Closure_v_P, Closure_w_P = sfsmodel_smagorinsky.eval(dx, u_x_P, u_y_P, u_z_P, v_x_P, v_y_P,
-                                                                              v_z_P, w_x_P, w_y_P, w_z_P,
-                                                                              Closure_u_P, Closure_v_P, Closure_w_P)
+            Closure_u_P, Closure_v_P, Closure_w_P = sfsmodel_smagorinsky.eval(geometry.dx, state_u_P,state_v_P,state_w_P,
+                                                                              Closure_u_P, Closure_v_P, Closure_w_P, metric)
         else:
             Closure_u_P = 0.0
             Closure_v_P = 0.0
@@ -364,8 +368,7 @@ for iterations in range(1):
         # Compute velocity prediction
         if (solverName=="Euler"):
             # rhs
-            rhs1.evaluate(state_u_P,state_v_P,state_w_P,
-                          state_uConv_P,state_vConv_P,state_wConv_P,mu,rho,metric)
+            rhs1.evaluate(state_u_P,state_v_P,state_w_P,mu,rho,metric)
 
             # Update the state using explicit Euler
             state_u_P.var = state_u_P.var + ( rhs1.rhs_u - Closure_u_P )*simDt
@@ -377,39 +380,31 @@ for iterations in range(1):
             # [JFM] needs turbulence models
             
             # Stage 1
-            rhs1.evaluate(state_u_P,state_v_P,state_w_P,
-                          state_uConv_P,state_vConv_P,state_wConv_P,mu,rho,metric)
+            rhs1.evaluate(state_u_P,state_v_P,state_w_P,mu,rho,metric)
             
             # Stage 2
             state_uTmp_P.ZAXPY(0.5*simDt,rhs1.rhs_u,state_u_P.var)
             state_vTmp_P.ZAXPY(0.5*simDt,rhs1.rhs_v,state_v_P.var)
             state_wTmp_P.ZAXPY(0.5*simDt,rhs1.rhs_w,state_w_P.var)
-            rhs2.evaluate(state_uTmp_P,state_vTmp_P,state_wTmp_P,
-                          state_uConv_P,state_vConv_P,state_wConv_P,mu,rho,metric)
+            rhs2.evaluate(state_uTmp_P,state_vTmp_P,state_wTmp_P,mu,rho,metric)
 
             # Stage 3
             state_uTmp_P.ZAXPY(0.5*simDt,rhs2.rhs_u,state_u_P.var)
             state_vTmp_P.ZAXPY(0.5*simDt,rhs2.rhs_v,state_v_P.var)
             state_wTmp_P.ZAXPY(0.5*simDt,rhs2.rhs_w,state_w_P.var)
-            rhs3.evaluate(state_uTmp_P,state_vTmp_P,state_wTmp_P,
-                          state_uConv_P,state_vConv_P,state_wConv_P,mu,rho,metric)
+            rhs3.evaluate(state_uTmp_P,state_vTmp_P,state_wTmp_P,mu,rho,metric)
 
             # Stage 4
             state_uTmp_P.ZAXPY(simDt,rhs3.rhs_u,state_u_P.var)
             state_vTmp_P.ZAXPY(simDt,rhs3.rhs_v,state_v_P.var)
             state_wTmp_P.ZAXPY(simDt,rhs3.rhs_w,state_w_P.var)
-            rhs4.evaluate(state_uTmp_P,state_vTmp_P,state_wTmp_P,
-                          state_uConv_P,state_vConv_P,state_wConv_P,mu,rho,metric)
+            rhs4.evaluate(state_uTmp_P,state_vTmp_P,state_wTmp_P,mu,rho,metric)
 
             # Update the state
             state_u_P.var = state_u_P.var + simDt/6.0*( rhs1.rhs_u + 2.0*rhs2.rhs_u + 2.0*rhs3.rhs_u + rhs4.rhs_u )
             state_v_P.var = state_v_P.var + simDt/6.0*( rhs1.rhs_v + 2.0*rhs2.rhs_v + 2.0*rhs3.rhs_v + rhs4.rhs_v )
             state_w_P.var = state_w_P.var + simDt/6.0*( rhs1.rhs_w + 2.0*rhs2.rhs_w + 2.0*rhs3.rhs_w + rhs4.rhs_w )
             
-        # Update periodic BCs
-        #u_P[-1,:,:] = u_P[0,:,:]; v_P[-1,:,:] = v_P[0,:,:]; w_P[-1,:,:] = w_P[0,:,:]
-        #u_P[:,-1,:] = u_P[:,0,:]; v_P[:,-1,:] = v_P[:,0,:]; w_P[:,-1,:] = w_P[:,0,:]
-        #u_P[:,:,-1] = u_P[:,:,0]; v_P[:,:,-1] = v_P[:,:,0]; w_P[:,:,-1] = w_P[:,:,0]
 
         
         # ----------------------------------------------------
@@ -426,7 +421,7 @@ for iterations in range(1):
         # 2. Boundary conditions: zero normal gradient. Note: only
         #   satisfies local mass conservation; global mass
         #   conservation needs to be enforced in open systems before
-        #   solving Poisson equation, e.g., by rescaling DP.
+        #   solving Poisson equation, e.g., by rescaling source_P.
 
         # Divergence of the predicted velocity
         metric.div_vel(state_u_P,state_v_P,state_w_P,source_P)

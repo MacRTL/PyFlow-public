@@ -33,7 +33,23 @@ import numpy as np
 import torch
 
 #Smagorinsky Closure Model
-def eval(dx, u_x_P, u_y_P, u_z_P, v_x_P, v_y_P, v_z_P, w_x_P, w_y_P, w_z_P, Closure_u_P, Closure_v_P, Closure_w_P):
+def eval(dx, state_u, state_v, state_w, Closure_u_P, Closure_v_P, Closure_w_P, metric):
+
+    # Compute velocity gradients
+    metric.grad_vel_visc(state_u)
+    metric.grad_vel_visc(state_v)
+    metric.grad_vel_visc(state_w)
+
+    # Local pointers to velocity gradients
+    u_x_P = state_u.grad_x
+    u_y_P = state_u.grad_y
+    u_z_P = state_u.grad_z
+    v_x_P = state_v.grad_x
+    v_y_P = state_v.grad_y
+    v_z_P = state_v.grad_x
+    w_x_P = state_w.grad_x
+    w_y_P = state_w.grad_y
+    w_z_P = state_w.grad_x
     
     S_11 = 0.5*(u_x_P + u_x_P)
     S_12 = 0.5*(u_y_P + v_x_P)

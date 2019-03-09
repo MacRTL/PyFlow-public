@@ -140,7 +140,7 @@ class rhs_NavierStokes:
             
     # ----------------------------------------------------
     # Evaluate the RHS
-    def evaluate(self,state_u,state_v,state_w,uConv,vConv,wConv,mu,rho,metric):
+    def evaluate(self,state_u,state_v,state_w,mu,rho,metric):
         # Zero the rhs
         self.rhs_u.zero_()
         self.rhs_v.zero_()
