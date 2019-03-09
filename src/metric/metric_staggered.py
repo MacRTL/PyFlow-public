@@ -133,6 +133,22 @@ class metric_generic:
         state.var_i[:,:,0] = self.interp_z*(state.var[:,:,0] + state.var[:,:,-1])
 
 
+    # ----------------------------------------------------------------
+    # Gradient of the pressure to the cell faces (pressure correction)
+    def grad_p(self,state):
+        state.grad_x[1:,:,:] = self.grad_x*(state.var[1:,:,:] - state.var[:-1,:,:])
+        state.grad_y[:,1:,:] = self.grad_y*(state.var[:,1:,:] - state.var[:,:-1,:])
+        state.grad_z[:,:,1:] = self.grad_z*(state.var[:,:,1:] - state.var[:,:,:-1])
+    
+        # Boundary conditions - Neumann zero normal gradient
+        # x
+        state.grad_x[ 0,:,:] = 0.0 #self.grad_x*(state.var[0,:,:] - state.var[-1,:,:])
+        # y
+        state.grad_y[:, 0,:] = 0.0 #self.grad_y*(state.var[:,0,:] - state.var[:,-1,:])
+        # z
+        state.grad_z[:,:, 0] = 0.0 #self.grad_z*(state.var[:,:,0] - state.var[:,:,-1])
+
+
     # ------------------------------------------------------------
     # Gradient of velocity to locations needed by the viscous flux
     def grad_vel_visc(self,state):
@@ -150,7 +166,7 @@ class metric_generic:
 
 
     # -------------------------------------------------
-    # Divergence of the x-velocity viscous flux
+    # Divergence of the viscous fluxes
     def div_visc(self,FX,FY,FZ,rhs_u):
         rhs_u[:-1,:,:] += self.div_x*(FX[1:,:,:] - FX[:-1,:,:])
         rhs_u[:,:-1,:] += self.div_y*(FY[:,1:,:] - FY[:,:-1,:])
@@ -160,6 +176,22 @@ class metric_generic:
         rhs_u[-1,:,:] += self.div_x*(FX[0,:,:] - FX[-1,:,:])
         rhs_u[:,-1,:] += self.div_y*(FY[:,0,:] - FY[:,-1,:])
         rhs_u[:,:,-1] += self.div_z*(FZ[:,:,0] - FZ[:,:,-1])
+
+        
+    # -------------------------------------------------
+    # Divergence of the velocity field at cell centers
+    def div_vel(self,state_u,state_v,state_w,divg):
+        # Zero the divergence
+        divg.zero_()
+        
+        divg[:-1,:,:] += self.grad_x*(state_u.var[1:,:,:] - state_u.var[:-1,:,:])
+        divg[:,:-1,:] += self.grad_y*(state_v.var[:,1:,:] - state_v.var[:,:-1,:])
+        divg[:,:,:-1] += self.grad_z*(state_w.var[:,:,1:] - state_w.var[:,:,:-1])
+    
+        # Periodic boundary conditions
+        divg[-1,:,:] += self.grad_x*(state_u.var[0,:,:] - state_u.var[-1,:,:])
+        divg[:,-1,:] += self.grad_y*(state_v.var[:,0,:] - state_v.var[:,-1,:])
+        divg[:,:,-1] += self.grad_z*(state_w.var[:,:,0] - state_w.var[:,:,-1])
 
 
     # -------------------------------------------------
@@ -239,11 +271,3 @@ class metric_generic:
         grad_z[:,:,-1] -= self.grad_z*( state_u.var_i[:,:,0] * state_v.var_i[:,:,0]
                                         - state_u.var_i[:,:,-1] * state_v.var_i[:,:,-1] )
 
-        
-    # -------------------------------------------------
-    # Divergence of the velocity field
-    #def div_vel(self,state_u,state_v,state_w):
-
-        # PASS THIS SOME MEMORY!
-
-        #div_vel = 
