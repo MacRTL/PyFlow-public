@@ -104,7 +104,7 @@ SFSModel = False
 #   Options: Euler, RK4
 solverName   = "RK4"
 genericOrder = 2
-Num_pressure_iterations = 10
+Num_pressure_iterations = 800
 #equationMode = "scalar"
 equationMode = "NS"
 
@@ -162,7 +162,7 @@ elif (configName=='channel'):
     uMax = 2.0
     vMax = 0.0
     wMax = 0.0
-    amp  = 0.001
+    amp  = 0.0001
     parabolaX = ( 6.0*(yGrid[np.newaxis,:,np.newaxis] + 0.5*configLy)
                   *(0.5*configLy - yGrid[np.newaxis,:,np.newaxis])
                   /configLy**2 )
@@ -446,15 +446,15 @@ for iterations in range(1):
         max_res_P = 0.0
 
         # Matrix equation (3D)
-        DInv  = -(geometry.dx**2 + geometry.dy**2 + geometry.dz**2)*0.5
+        DInv  = -geometry.dx**2/6.0 # Centers - uniform grid
         DInvF = -geometry.dx**2*0.2 # Faces - uniform grid
         DInvC = -geometry.dx**2/3.0 # Corners - uniform grid
-        EFacX = -geometry.dx**2
-        EFacY = -geometry.dy**2
-        EFacZ = -geometry.dz**2
-        FFacX = -geometry.dx**2
-        FFacY = -geometry.dy**2
-        FFacZ = -geometry.dz**2
+        EFacX = -1.0/geometry.dx**2
+        EFacY = -1.0/geometry.dy**2
+        EFacZ = -1.0/geometry.dz**2
+        FFacX = -1.0/geometry.dx**2
+        FFacY = -1.0/geometry.dy**2
+        FFacZ = -1.0/geometry.dz**2
         
         for j in range( Num_pressure_iterations ):
             # Initial guess is p from previous time step
@@ -476,9 +476,9 @@ for iterations in range(1):
             # Boundary conditions - Neumann zero normal gradient
             # -x face
             state_p_P.var[ 0,1:-1,1:-1] = DInvF*( FFacX *p_OLD_P[1,1:-1,1:-1]
-                                                 +FFacY*p_OLD_P[0,2:,1:-1] + EFacY*p_OLD_P[0,:-2,1:-1]
-                                                 +FFacZ*p_OLD_P[0,1:-1,2:] + EFacZ*p_OLD_P[0,1:-1,:-2]
-                                                 + source_P[0,1:-1,1:-1] )
+                                                  +FFacY*p_OLD_P[0,2:,1:-1] + EFacY*p_OLD_P[0,:-2,1:-1]
+                                                  +FFacZ*p_OLD_P[0,1:-1,2:] + EFacZ*p_OLD_P[0,1:-1,:-2]
+                                                  + source_P[0,1:-1,1:-1] )
             # +x face
             state_p_P.var[-1,1:-1,1:-1] = DInvF*( EFacX *p_OLD_P[-2,1:-1,1:-1]
                                                  +FFacY*p_OLD_P[-1,2:,1:-1] + EFacY*p_OLD_P[-1,:-2,1:-1]
