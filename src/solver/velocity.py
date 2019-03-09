@@ -30,165 +30,182 @@
 # ------------------------------------------------------------------------
 
 import numpy as np
+import torch
 
 # ----------------------------------------------------
-# Velocity predictor rhs
+# Scalar advection-diffusion equation RHS
 # ----------------------------------------------------
-def rhs_predictor(rhs_u,rhs_v,rhs_w,state_u,state_v,state_w,uConv,vConv,wConv,mu,rho,metric):
+class rhs_scalar:
+    def __init__(self,IC_zeros):
+        # Allocate rhs array
+        if (torch.cuda.is_available()):
+            self.rhs_u = torch.FloatTensor(IC_zeros).cuda()
+            self.rhs_v = torch.FloatTensor(IC_zeros).cuda()
+            self.rhs_w = torch.FloatTensor(IC_zeros).cuda()
+        else:
+            self.rhs_u = torch.FloatTensor(IC_zeros)
+            self.rhs_v = torch.FloatTensor(IC_zeros)
+            self.rhs_w = torch.FloatTensor(IC_zeros)
 
-    # Zero the rhs
-    rhs_u.zero_()
-    rhs_v.zero_()
-    rhs_w.zero_()
+            
+    # ----------------------------------------------------
+    # Evaluate the RHS
+    def evaluate(self,state_u,state_v,state_w,uConv,vConv,wConv,mu,rho,metric):
+        # Zero the rhs
+        self.rhs_u.zero_()
+        self.rhs_v.zero_()
+        self.rhs_w.zero_()
         
-    # Compute velocity gradients for the viscous flux
-    metric.grad_vel_visc(state_u)
-    metric.grad_vel_visc(state_v)
-    metric.grad_vel_visc(state_w)
+        # Compute velocity gradients for the viscous flux
+        metric.grad_vel_visc(state_u)
+        metric.grad_vel_visc(state_v)
+        metric.grad_vel_visc(state_w)
         
-    # Scalar diffusive fluxes
-    # x
-    FX = mu/rho * state_u.grad_x
-    FY = mu/rho * state_u.grad_y
-    FZ = mu/rho * state_u.grad_z
-    metric.div_visc(FX,FY,FZ,rhs_u)
-    
-    # y
-    FX = mu/rho * state_v.grad_x
-    FY = mu/rho * state_v.grad_y
-    FZ = mu/rho * state_v.grad_z
-    metric.div_visc(FX,FY,FZ,rhs_v)
-
-    # z
-    FX = mu/rho * state_w.grad_x
-    FY = mu/rho * state_w.grad_y
-    FZ = mu/rho * state_w.grad_z
-    metric.div_visc(FX,FY,FZ,rhs_w)
-    
-    #Diffusion_term_u = state_u.grad_xx + state_u.grad_yy + state_u.grad_zz
-    #Diffusion_term_v = state_v.grad_xx + state_v.grad_yy + state_v.grad_zz
-    #Diffusion_term_w = state_w.grad_xx + state_w.grad_yy + state_w.grad_zz
-
-    
-    # Scalar advective fluxes
-    # xx
-    metric.interp_u_xm(state_u)
-    metric.interp_u_xm(uConv)
-    metric.vel_conv_xx(state_u,uConv,rhs_u)
-    # xy
-    metric.interp_uw_y(state_u)
-    metric.interp_vw_x(vConv)
-    metric.vel_conv_y(state_u,vConv,rhs_u)
-    # xz
-    metric.interp_uv_z(state_u)
-    metric.interp_vw_x(wConv)
-    metric.vel_conv_z(state_u,wConv,rhs_u)
-    
-    # yx
-    metric.interp_vw_x(state_v)
-    metric.interp_uw_y(uConv)
-    metric.vel_conv_x(state_v,uConv,rhs_v)
-    # yy
-    metric.interp_v_ym(state_v)
-    metric.interp_v_ym(vConv)
-    metric.vel_conv_yy(state_v,vConv,rhs_v)
-    # yz
-    metric.interp_uv_z(state_v)
-    metric.interp_uw_y(wConv)
-    metric.vel_conv_z(state_v,wConv,rhs_v)
-    
-    # zx
-    metric.interp_vw_x(state_w)
-    metric.interp_uv_z(uConv)
-    metric.vel_conv_x(state_w,uConv,rhs_w)
-    # zy
-    metric.interp_uw_y(state_w)
-    metric.interp_uv_z(vConv)
-    metric.vel_conv_y(state_w,vConv,rhs_w)
-    # zz
-    metric.interp_w_zm(state_w)
-    metric.interp_w_zm(wConv)
-    metric.vel_conv_zz(state_w,wConv,rhs_w)
+        # Scalar diffusive fluxes
+        # x
+        FX = mu/rho * state_u.grad_x
+        FY = mu/rho * state_u.grad_y
+        FZ = mu/rho * state_u.grad_z
+        metric.div_visc(FX,FY,FZ,self.rhs_u)
         
-    
-    # Scalar advection
-    #Nonlinear_term_u = state_u.grad_x*uMax + state_u.grad_y*vMax  + state_u.grad_z*wMax
-    #Nonlinear_term_v = state_v.grad_x*uMax + state_v.grad_y*vMax  + state_v.grad_z*wMax
-    #Nonlinear_term_w = state_w.grad_x*uMax + state_w.grad_y*vMax  + state_w.grad_z*wMax
+        # y
+        FX = mu/rho * state_v.grad_x
+        FY = mu/rho * state_v.grad_y
+        FZ = mu/rho * state_v.grad_z
+        metric.div_visc(FX,FY,FZ,self.rhs_v)
         
-    # Navier-Stokes
-    #Nonlinear_term_u = u_x*u + u_y*v  + u_z*w
-    #Nonlinear_term_v = v_x*u + v_y*v  + v_z*w
-    #Nonlinear_term_w = w_x*u + w_y*v  + w_z*w
+        # z
+        FX = mu/rho * state_w.grad_x
+        FY = mu/rho * state_w.grad_y
+        FZ = mu/rho * state_w.grad_z
+        metric.div_visc(FX,FY,FZ,self.rhs_w)
+        
+        # Scalar advective fluxes
+        # xx
+        metric.interp_u_xm(state_u)
+        metric.interp_u_xm(uConv)
+        metric.vel_conv_xx(state_u,uConv,self.rhs_u)
+        # xy
+        metric.interp_uw_y(state_u)
+        metric.interp_vw_x(vConv)
+        metric.vel_conv_y(state_u,vConv,self.rhs_u)
+        # xz
+        metric.interp_uv_z(state_u)
+        metric.interp_vw_x(wConv)
+        metric.vel_conv_z(state_u,wConv,self.rhs_u)
+        
+        # yx
+        metric.interp_vw_x(state_v)
+        metric.interp_uw_y(uConv)
+        metric.vel_conv_x(state_v,uConv,self.rhs_v)
+        # yy
+        metric.interp_v_ym(state_v)
+        metric.interp_v_ym(vConv)
+        metric.vel_conv_yy(state_v,vConv,self.rhs_v)
+        # yz
+        metric.interp_uv_z(state_v)
+        metric.interp_uw_y(wConv)
+        metric.vel_conv_z(state_v,wConv,self.rhs_v)
+        
+        # zx
+        metric.interp_vw_x(state_w)
+        metric.interp_uv_z(uConv)
+        metric.vel_conv_x(state_w,uConv,self.rhs_w)
+        # zy
+        metric.interp_uw_y(state_w)
+        metric.interp_uv_z(vConv)
+        metric.vel_conv_y(state_w,vConv,self.rhs_w)
+        # zz
+        metric.interp_w_zm(state_w)
+        metric.interp_w_zm(wConv)
+        metric.vel_conv_zz(state_w,wConv,self.rhs_w)
 
-    # Accumulate to rhs
-    #rhs_u = (mu/rho)*Diffusion_term_u - Nonlinear_term_u
-    #rhs_v = (mu/rho)*Diffusion_term_v - Nonlinear_term_v
-    #rhs_w = (mu/rho)*Diffusion_term_w - Nonlinear_term_w
 
 
-    
-def SaveForLater():
+# ----------------------------------------------------
+# Navier-Stokes equation RHS for pressure-projection
+# ----------------------------------------------------
+class rhs_NavierStokes:
+    def __init__(self,IC_zeros):
+        # Allocate rhs array
+        if (torch.cuda.is_available()):
+            self.rhs_u = torch.FloatTensor(IC_zeros).cuda()
+            self.rhs_v = torch.FloatTensor(IC_zeros).cuda()
+            self.rhs_w = torch.FloatTensor(IC_zeros).cuda()
+        else:
+            self.rhs_u = torch.FloatTensor(IC_zeros)
+            self.rhs_v = torch.FloatTensor(IC_zeros)
+            self.rhs_w = torch.FloatTensor(IC_zeros)
 
-    # Navier-Stokes viscous fluxes
-    # x
-    FX = 2.0*mu/rho * state_u.grad_x
-    FY = mu/rho * (state_u.grad_y + state_v.grad_x)
-    FZ = mu/rho * (state_u.grad_z + state_w.grad_x)
-    metric.div_visc_x(FX,rhs_u)
-    metric.div_visc_y(FY,rhs_u)
-    metric.div_visc_z(FZ,rhs_u)
-    
-    # y
-    FX = mu/rho * (state_v.grad_x + state_u.grad_y)
-    FY = 2.0*mu/rho * state_v.grad_y
-    FZ = mu/rho * (state_v.grad_z + state_w.grad_y)
-    metric.div_visc_x(FX,rhs_v)
-    metric.div_visc_y(FY,rhs_v)
-    metric.div_visc_z(FZ,rhs_v)
+            
+    # ----------------------------------------------------
+    # Evaluate the RHS
+    def evaluate(self,state_u,state_v,state_w,uConv,vConv,wConv,mu,rho,metric):
+        # Zero the rhs
+        self.rhs_u.zero_()
+        self.rhs_v.zero_()
+        self.rhs_w.zero_()
+        
+        # Compute velocity gradients for the viscous flux
+        metric.grad_vel_visc(state_u)
+        metric.grad_vel_visc(state_v)
+        metric.grad_vel_visc(state_w)
+        
+        # Viscous fluxes
+        # x
+        FX = 2.0*mu/rho * state_u.grad_x
+        FY = mu/rho * (state_u.grad_y + state_v.grad_x)
+        FZ = mu/rho * (state_u.grad_z + state_w.grad_x)
+        metric.div_visc(FX,FY,FZ,self.rhs_u)
+        
+        # y
+        FX = mu/rho * (state_v.grad_x + state_u.grad_y)
+        FY = 2.0*mu/rho * state_v.grad_y
+        FZ = mu/rho * (state_v.grad_z + state_w.grad_y)
+        metric.div_visc(FX,FY,FZ,self.rhs_v)
+        
+        # z
+        FX = mu/rho * (state_w.grad_x + state_u.grad_z)
+        FY = mu/rho * (state_w.grad_y + state_v.grad_z)
+        FZ = 2.0*mu/rho * state_w.grad_z
+        metric.div_visc(FX,FY,FZ,self.rhs_w)
+        
+        # Advective fluxes
+        # xx
+        metric.interp_u_xm(state_u)
+        metric.vel_conv_xx(state_u,state_u,self.rhs_u)
+        # xy
+        metric.interp_uw_y(state_u)
+        metric.interp_vw_x(state_v)
+        metric.vel_conv_y(state_u,state_v,self.rhs_u)
+        # xz
+        metric.interp_uv_z(state_u)
+        metric.interp_vw_x(state_w)
+        metric.vel_conv_z(state_u,state_w,self.rhs_u)
+        
+        # yx
+        metric.interp_vw_x(state_v)
+        metric.interp_uw_y(state_u)
+        metric.vel_conv_x(state_v,state_u,self.rhs_v)
+        # yy
+        metric.interp_v_ym(state_v)
+        metric.interp_v_ym(state_v)
+        metric.vel_conv_yy(state_v,state_v,self.rhs_v)
+        # yz
+        metric.interp_uv_z(state_v)
+        metric.interp_uw_y(state_w)
+        metric.vel_conv_z(state_v,state_w,self.rhs_v)
+        
+        # zx
+        metric.interp_vw_x(state_w)
+        metric.interp_uv_z(state_u)
+        metric.vel_conv_x(state_w,state_u,self.rhs_w)
+        # zy
+        metric.interp_uw_y(state_w)
+        metric.interp_uv_z(state_v)
+        metric.vel_conv_y(state_w,state_v,self.rhs_w)
+        # zz
+        metric.interp_w_zm(state_w)
+        metric.interp_w_zm(state_w)
+        metric.vel_conv_zz(state_w,state_w,self.rhs_w)
 
-    # z
-    FX = mu/rho * (state_w.grad_x + state_u.grad_z)
-    FY = mu/rho * (state_w.grad_y + state_v.grad_z)
-    FZ = 2.0*mu/rho * state_w.grad_z
-    metric.div_visc_x(FX,rhs_w)
-    metric.div_visc_y(FY,rhs_w)
-    metric.div_visc_z(FZ,rhs_w)
-    
-    
-    # Navier-Stokes convective fluxes
-    # xx
-    metric.interp_u_xm(state_u)
-    metric.vel_conv_xx(state_u,state_u,rhs_u)
-    # xy
-    metric.interp_v_ym(state_u)
-    metric.interp_u_xm(state_v)
-    metric.vel_conv_xy(state_u,state_v,rhs_u)
-    # xz
-    metric.interp_w_zm(state_u)
-    metric.interp_u_xm(state_w)
-    metric.vel_conv_xz(state_u,state_w,rhs_u)
-    
-    # yx
-    metric.interp_u_xm(state_v)
-    metric.interp_v_ym(state_u)
-    metric.vel_conv_xx(state_v,state_u,rhs_v)
-    # yy
-    metric.interp_v_ym(state_v)
-    metric.vel_conv_xy(state_v,state_v,rhs_v)
-    # yz
-    metric.interp_w_zm(state_v)
-    metric.interp_v_ym(state_w)
-    metric.vel_conv_xz(state_v,state_w,rhs_v)
-    
-    # zx
-    metric.interp_u_xm(state_w)
-    metric.interp_w_zm(state_u)
-    metric.vel_conv_xx(state_w,state_u,rhs_w)
-    # zy
-    metric.interp_v_ym(state_w)
-    metric.interp_w_zm(state_v)
-    metric.vel_conv_xy(state_w,state_v,rhs_w)
-    # zz
-    metric.interp_w_zm(state_w)
-    metric.vel_conv_xz(state_w,state_w,rhs_w)
