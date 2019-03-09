@@ -48,8 +48,11 @@ import state
 import dataReader as dr
 import constants as const
 #
+sys.path.append("../geometry")
+import geometry as geo
+#
 sys.path.append("../metric")
-import metric_collocated as metric
+import metric_staggered
 #
 sys.path.append("../solver")
 import velocity
@@ -100,7 +103,7 @@ SFSModel = False
 #   Options: Euler, RK4
 solverName   = "RK4"
 genericOrder = 2
-Num_pressure_iterations = 10
+Num_pressure_iterations = 0
 
 # Comparison options
 useTargetData = False
@@ -145,15 +148,12 @@ elif (configName=='periodicGaussian'):
     data_IC[:,:,:,2] = wMax * gaussianBump
     del gaussianBump
 
-    
-# Set the simulation grid parameters
-#   Currently configured for uniform grid
-#   [JFM] move this to its own module based on dataClasses
-#
-Nx = len(xGrid); Lx = xGrid[-1]-xGrid[0]; dx = Lx/float(Nx)
-Ny = len(yGrid); Ly = yGrid[-1]-yGrid[0]; dy = Ly/float(Ny)
-Nz = len(zGrid); Lz = zGrid[-1]-zGrid[0]; dz = Lz/float(Nz)
 
+# Initialize the geometry
+geometry = geo.uniform(xGrid,yGrid,zGrid)
+
+# Initialize the metrics
+metric = metric_staggered.metric_generic(geometry)
 
 # Set up Torch state
 haveCuda = torch.cuda.is_available()
@@ -188,8 +188,9 @@ IC_v_np = data_IC[:,:,:,1]
 IC_w_np = data_IC[:,:,:,2]
 IC_p_np = data_IC[:,:,:,3]
 
-IC_zeros_np = np.zeros( (Nx,Ny,Nz) )
+IC_zeros_np = np.zeros( (configNx,configNy,configNz) )
 
+IC_ones_np = np.ones( (configNx,configNy,configNz) )
 
     
 # ----------------------------------------------------
@@ -211,6 +212,12 @@ model_name = 'LES_model_NR_March2019'
 state_u_P = state.data_P(IC_u_np,IC_zeros_np)
 state_v_P = state.data_P(IC_v_np,IC_zeros_np)
 state_w_P = state.data_P(IC_w_np,IC_zeros_np)
+state_p_P = state.data_P(IC_zeros_np,IC_zeros_np)
+
+# TEMPORARY STATES FOR ADVECTION-DIFFUSION TEST
+state_uConv_P = state.data_P(uMax*IC_ones_np,IC_zeros_np)
+state_vConv_P = state.data_P(vMax*IC_ones_np,IC_zeros_np)
+state_wConv_P = state.data_P(wMax*IC_ones_np,IC_zeros_np)
 
 # Need a temporary velocity state for RK solvers
 if (solverName[:-1]=="RK"):
@@ -218,7 +225,7 @@ if (solverName[:-1]=="RK"):
     state_vTmp_P = state.data_P(IC_v_np,IC_zeros_np)
     state_wTmp_P = state.data_P(IC_w_np,IC_zeros_np)
 
-# Allocate pressure arrays
+# Allocate workspace arrays
 if (haveCuda):
     Closure_u_P =  torch.FloatTensor( IC_zeros_np ).cuda()
     Closure_v_P = torch.FloatTensor( IC_zeros_np ).cuda()
@@ -226,6 +233,20 @@ if (haveCuda):
     
     p_P =  torch.FloatTensor( IC_zeros_np ).cuda()
     p_OLD_P =  torch.FloatTensor( IC_zeros_np).cuda()
+
+    rhs_u1 = torch.FloatTensor(IC_zeros_np).cuda()
+    rhs_v1 = torch.FloatTensor(IC_zeros_np).cuda()
+    rhs_w1 = torch.FloatTensor(IC_zeros_np).cuda()
+    if (solverName[:-1]=="RK"):
+        rhs_u2 = torch.FloatTensor(IC_zeros_np).cuda()
+        rhs_v2 = torch.FloatTensor(IC_zeros_np).cuda()
+        rhs_w2 = torch.FloatTensor(IC_zeros_np).cuda()
+        rhs_u3 = torch.FloatTensor(IC_zeros_np).cuda()
+        rhs_v3 = torch.FloatTensor(IC_zeros_np).cuda()
+        rhs_w3 = torch.FloatTensor(IC_zeros_np).cuda()
+        rhs_u4 = torch.FloatTensor(IC_zeros_np).cuda()
+        rhs_v4 = torch.FloatTensor(IC_zeros_np).cuda()
+        rhs_w4 = torch.FloatTensor(IC_zeros_np).cuda()
 else:
     Closure_u_P =  torch.FloatTensor( IC_zeros_np )
     Closure_v_P = torch.FloatTensor( IC_zeros_np )
@@ -236,6 +257,20 @@ else:
     p_x_P =  torch.FloatTensor( IC_zeros_np )
     p_y_P =  torch.FloatTensor( IC_zeros_np )
     p_z_P =  torch.FloatTensor( IC_zeros_np )
+
+    rhs_u1 = torch.FloatTensor(IC_zeros_np)
+    rhs_v1 = torch.FloatTensor(IC_zeros_np)
+    rhs_w1 = torch.FloatTensor(IC_zeros_np)
+    if (solverName[:-1]=="RK"):
+        rhs_u2 = torch.FloatTensor(IC_zeros_np)
+        rhs_v2 = torch.FloatTensor(IC_zeros_np)
+        rhs_w2 = torch.FloatTensor(IC_zeros_np)
+        rhs_u3 = torch.FloatTensor(IC_zeros_np)
+        rhs_v3 = torch.FloatTensor(IC_zeros_np)
+        rhs_w3 = torch.FloatTensor(IC_zeros_np)
+        rhs_u4 = torch.FloatTensor(IC_zeros_np)
+        rhs_v4 = torch.FloatTensor(IC_zeros_np)
+        rhs_w4 = torch.FloatTensor(IC_zeros_np)
 
 # Clean up
 del IC_u_np
@@ -274,14 +309,14 @@ for iterations in range(1):
     maxU = torch.max(state_u_P.var)
     maxV = torch.max(state_v_P.var)
     maxW = torch.max(state_w_P.var)
-    maxCFL = max((maxU/dx,maxV/dy,maxW/dz))*simDt
+    maxCFL = max((maxU/geometry.dx,maxV/geometry.dy,maxW/geometry.dz))*simDt
     lineStr = "  {:10d}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}"
     print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW))
 
     # Plot the initial state
-    dr.plotData(state_u_P.var[:,:,int(Nz/2)].cpu().numpy(),"state_U_"+str(itCount))
-    dr.plotData(state_v_P.var[:,:,int(Nz/2)].cpu().numpy(),"state_V_"+str(itCount))
-    dr.plotData(state_w_P.var[:,:,int(Nz/2)].cpu().numpy(),"state_W_"+str(itCount))
+    dr.plotData(state_u_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_U_"+str(itCount))
+    dr.plotData(state_v_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_V_"+str(itCount))
+    dr.plotData(state_w_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_W_"+str(itCount))
 
     # Compute the initial energy
     initEnergy = torch.sum(state_u_P.var**2 + state_v_P.var**2 + state_w_P.var**2)
@@ -313,37 +348,42 @@ for iterations in range(1):
         # Compute velocity prediction
         if (solverName=="Euler"):
             # rhs
-            rhs_u, rhs_v, rhs_w = velocity.rhs_predictor(state_u_P,state_v_P,state_w_P,uMax,vMax,wMax,mu,rho,genericOrder,dx)
+            velocity.rhs_predictor(rhs_u1, rhs_v1, rhs_w1,state_u_P,state_v_P,state_w_P,
+                                   state_uConv_P,state_vConv_P,state_wConv_P,mu,rho,metric)
 
             # Update the state using explicit Euler
-            state_u_P.var = state_u_P.var + ( rhs_u - Closure_u_P )*simDt
-            state_v_P.var = state_v_P.var + ( rhs_v - Closure_v_P )*simDt
-            state_w_P.var = state_w_P.var + ( rhs_w - Closure_w_P )*simDt
+            state_u_P.var = state_u_P.var + ( rhs_u1 - Closure_u_P )*simDt
+            state_v_P.var = state_v_P.var + ( rhs_v1 - Closure_v_P )*simDt
+            state_w_P.var = state_w_P.var + ( rhs_w1 - Closure_w_P )*simDt
 
         elif (solverName=="RK4"):
             #
             # [JFM] needs turbulence models
             
             # Stage 1
-            rhs_u1, rhs_v1, rhs_w1 = velocity.rhs_predictor(state_u_P,state_v_P,state_w_P,uMax,vMax,wMax,mu,rho,genericOrder,dx)
+            velocity.rhs_predictor(rhs_u1, rhs_v1, rhs_w1,state_u_P,state_v_P,state_w_P,
+                                   state_uConv_P,state_vConv_P,state_wConv_P,mu,rho,metric)
 
             # Stage 2
             state_uTmp_P.ZAXPY(0.5*simDt,rhs_u1,state_u_P.var)
             state_vTmp_P.ZAXPY(0.5*simDt,rhs_v1,state_v_P.var)
             state_wTmp_P.ZAXPY(0.5*simDt,rhs_w1,state_w_P.var)
-            rhs_u2, rhs_v2, rhs_w2 = velocity.rhs_predictor(state_uTmp_P,state_vTmp_P,state_wTmp_P,uMax,vMax,wMax,mu,rho,genericOrder,dx)
+            velocity.rhs_predictor(rhs_u2, rhs_v2, rhs_w2,state_uTmp_P,state_vTmp_P,state_wTmp_P,
+                                   state_uConv_P,state_vConv_P,state_wConv_P,mu,rho,metric)
 
             # Stage 3
             state_uTmp_P.ZAXPY(0.5*simDt,rhs_u2,state_u_P.var)
             state_vTmp_P.ZAXPY(0.5*simDt,rhs_v2,state_v_P.var)
             state_wTmp_P.ZAXPY(0.5*simDt,rhs_w2,state_w_P.var)
-            rhs_u3, rhs_v3, rhs_w3 = velocity.rhs_predictor(state_uTmp_P,state_vTmp_P,state_wTmp_P,uMax,vMax,wMax,mu,rho,genericOrder,dx)
+            velocity.rhs_predictor(rhs_u3, rhs_v3, rhs_w3,state_uTmp_P,state_vTmp_P,state_wTmp_P,
+                                   state_uConv_P,state_vConv_P,state_wConv_P,mu,rho,metric)
 
             # Stage 4
             state_uTmp_P.ZAXPY(simDt,rhs_u3,state_u_P.var)
             state_vTmp_P.ZAXPY(simDt,rhs_v3,state_v_P.var)
             state_wTmp_P.ZAXPY(simDt,rhs_w3,state_w_P.var)
-            rhs_u4, rhs_v4, rhs_w4 = velocity.rhs_predictor(state_uTmp_P,state_vTmp_P,state_wTmp_P,uMax,vMax,wMax,mu,rho,genericOrder,dx)
+            velocity.rhs_predictor(rhs_u4, rhs_v4, rhs_w4,state_uTmp_P,state_vTmp_P,state_wTmp_P,
+                                   state_uConv_P,state_vConv_P,state_wConv_P,mu,rho,metric)
 
             # Update the state
             state_u_P.var = state_u_P.var + simDt/6.0*( rhs_u1 + 2.0*rhs_u2 + 2.0*rhs_u3 + rhs_u4 )
@@ -361,8 +401,18 @@ for iterations in range(1):
         # ----------------------------------------------------
 
         # [JFM] move this to its own module
-        
-        Source_term = rho*dx*dx*(state_u_P.grad_x + state_v_P.grad_y + state_w_P.grad_z)
+
+        # Compute gradients of \hat{u}
+        #   -- Don't need all derivatives, but this is the function we have..
+        metric.grad_vel_visc(state_u_P)
+        metric.grad_vel_visc(state_v_P)
+        metric.grad_vel_visc(state_w_P)
+
+        # Velocity divergence source term
+        Source_term = rho/simDt * (state_u_P.grad_x + state_v_P.grad_y + state_w_P.grad_z)
+        #Source_term = rho*dx*dx*(state_u_P.grad_x + state_v_P.grad_y + state_w_P.grad_z)
+
+        # Define convergence criterion
         
         for j in range( Num_pressure_iterations ):
             
@@ -455,18 +505,18 @@ for iterations in range(1):
 
             
         #pressure gradients
-        p_x_P[1:-1,:,:] = (p_P[2:,:, :] - p_P[0:-2,:,:])/(2*dx)
-        p_x_P[-1,:,:] = (p_P[0,:, :] - p_P[-2,:,:])/(2*dx)
-        p_x_P[0,:,:] = (p_P[1,:, :] - p_P[-1,:,:])/(2*dx)
+        p_x_P[1:-1,:,:] = (p_P[2:,:, :] - p_P[0:-2,:,:])/(2*geometry.dx)
+        p_x_P[-1,:,:] = (p_P[0,:, :] - p_P[-2,:,:])/(2*geometry.dx)
+        p_x_P[0,:,:] = (p_P[1,:, :] - p_P[-1,:,:])/(2*geometry.dx)
         
-        p_y_P[:,1:-1,:] = (p_P[:,2:,:] - p_P[:,0:-2,:])/(2*dx)
-        p_y_P[:,-1,:] = (p_P[:,0,:] - p_P[:,-2,:])/(2*dx)
-        p_y_P[:,0,:] = (p_P[:,1,:] - p_P[:,-1,:])/(2*dx)
+        p_y_P[:,1:-1,:] = (p_P[:,2:,:] - p_P[:,0:-2,:])/(2*geometry.dx)
+        p_y_P[:,-1,:] = (p_P[:,0,:] - p_P[:,-2,:])/(2*geometry.dx)
+        p_y_P[:,0,:] = (p_P[:,1,:] - p_P[:,-1,:])/(2*geometry.dx)
         
-        p_z_P[:,:,1:-1] = (p_P[:,:,2:] - p_P[:,:,0:-2])/(2*dx)
-        p_z_P[:,:,-1] = (p_P[:,:,0] - p_P[:,:,-2])/(2*dx)
-        p_z_P[:,:,0] = (p_P[:,:,1] - p_P[:,:,-1])/(2*dx)
-       
+        p_z_P[:,:,1:-1] = (p_P[:,:,2:] - p_P[:,:,0:-2])/(2*geometry.dx)
+        p_z_P[:,:,-1] = (p_P[:,:,0] - p_P[:,:,-2])/(2*geometry.dx)
+        p_z_P[:,:,0] = (p_P[:,:,1] - p_P[:,:,-1])/(2*geometry.dx)
+
         
         # ----------------------------------------------------
         # Velocity correction step
@@ -483,7 +533,7 @@ for iterations in range(1):
         maxU = torch.max(state_u_P.var)
         maxV = torch.max(state_v_P.var)
         maxW = torch.max(state_w_P.var)
-        maxCFL = max((maxU/dx,maxV/dy,maxW/dz))*simDt
+        maxCFL = max((maxU/geometry.dx,maxV/geometry.dy,maxW/geometry.dz))*simDt
 
         # Update the time
         itCount += 1
@@ -531,6 +581,6 @@ for iterations in range(1):
                                                                         initEnergy/finalEnergy))
 
     # Print a pretty picture
-    dr.plotData(state_u_P.var[:,:,int(Nz/2)].cpu().numpy(),"state_U_"+str(itCount))
-    dr.plotData(state_v_P.var[:,:,int(Nz/2)].cpu().numpy(),"state_V_"+str(itCount))
-    dr.plotData(state_w_P.var[:,:,int(Nz/2)].cpu().numpy(),"state_W_"+str(itCount))
+    dr.plotData(state_u_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_U_"+str(itCount))
+    dr.plotData(state_v_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_V_"+str(itCount))
+    dr.plotData(state_w_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_W_"+str(itCount))

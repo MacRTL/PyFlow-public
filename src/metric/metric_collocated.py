@@ -93,7 +93,10 @@ def FiniteDifference_u(genericOrder,dx,state_P):
     state_P.grad_z[:,:,-1] = (state_P.var[:,:,0] - state_P.var[:,:,-2])*0.5*dxi
     state_P.grad_z[:,:, 0] = (state_P.var[:,:,1] - state_P.var[:,:,-1])*0.5*dxi
 
-    
+
+
+
+def FiniteDifference_u_deprecated(genericOrder,dx,state_P):
     state_P.grad_xx[-1,:,:] = (state_P.var[0,:,:] -2*state_P.var[-1,:,:]+ state_P.var[-2,:,:])/(dx*dx)   
     state_P.grad_xx[0,:,:] = (state_P.var[1,:,:] -2*state_P.var[0,:,:]+ state_P.var[-1,:,:])/(dx*dx)   
 

@@ -2,7 +2,7 @@
 #
 # PyFlow: A GPU-accelerated CFD platform written in Python
 #
-# @file state.py
+# @file geometry.py
 #
 # The MIT License (MIT)
 # Copyright (c) 2019 University of Illinois Board of Trustees
@@ -30,36 +30,24 @@
 # ------------------------------------------------------------------------
 
 import numpy as np
-import torch
 
 # ----------------------------------------------------
-# Base class for state data
+# General uniform geometry
 # ----------------------------------------------------
-class data_P:
-    def __init__(self,IC,IC_zeros):
+class uniform:
+    def __init__(self,xGrid,yGrid,zGrid):
+        # Type identifier
+        self.type = 'uniform'
         
-        # Allocate arrays and set initial conditions
-        if (torch.cuda.is_available()):
-            # State data
-            self.var     = torch.FloatTensor(IC).cuda()
-            # Interpolated state data
-            self.var_i   = torch.FloatTensor(IC).cuda()
-            # First derivatives
-            self.grad_x  = torch.FloatTensor(IC_zeros).cuda()
-            self.grad_y  = torch.FloatTensor(IC_zeros).cuda()
-            self.grad_z  = torch.FloatTensor(IC_zeros).cuda()
-            
-        else:
-            # State data
-            self.var     = torch.FloatTensor(IC)
-            # Interpolated state data
-            self.var_i   = torch.FloatTensor(IC)
-            # First derivatives
-            self.grad_x  = torch.FloatTensor(IC_zeros)
-            self.grad_y  = torch.FloatTensor(IC_zeros)
-            self.grad_z  = torch.FloatTensor(IC_zeros)
+        # Grid sizes
+        self.Nx = len(xGrid)
+        self.Ny = len(yGrid)
+        self.Nz = len(zGrid)
 
-    def ZAXPY(self,A,X,Y):
-        # Z = A*X + Y
-        # Scalar A; vector X and Y
-        self.var = A*X + Y
+        self.Lx = xGrid[-1]-xGrid[0]
+        self.Ly = yGrid[-1]-yGrid[0]
+        self.Lz = zGrid[-1]-zGrid[0]
+
+        self.dx = self.Lx/float(self.Nx); self.dxi = 1.0/self.dx
+        self.dy = self.Ly/float(self.Ny); self.dyi = 1.0/self.dy
+        self.dz = self.Lz/float(self.Nz); self.dzi = 1.0/self.dz
