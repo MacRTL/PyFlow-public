@@ -88,7 +88,7 @@ if (configName=='restart'):
     restartFileStr = '../../examples/filtered_vol_dnsbox_1024_Lx0.045_NR_00000020_coarse'
 
 # Model constants
-mu  = 0.0 #1.8678e-5
+mu  = 0.005 #1.8678e-5
 rho = 1.2
 
 # Time step

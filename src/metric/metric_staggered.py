@@ -136,47 +136,32 @@ class metric_generic:
     # ------------------------------------------------------------
     # Gradient of velocity to locations needed by the viscous flux
     def grad_vel_visc(self,state):
-        state.grad_x[:-1,:,:] = self.grad_x*(state.var[1:,:,:] - state.var[:-1,:,:])
-        state.grad_y[:,:-1,:] = self.grad_y*(state.var[:,1:,:] - state.var[:,:-1,:])
-        state.grad_z[:,:,:-1] = self.grad_z*(state.var[:,:,1:] - state.var[:,:,:-1])
+        state.grad_x[1:,:,:] = self.grad_x*(state.var[1:,:,:] - state.var[:-1,:,:])
+        state.grad_y[:,1:,:] = self.grad_y*(state.var[:,1:,:] - state.var[:,:-1,:])
+        state.grad_z[:,:,1:] = self.grad_z*(state.var[:,:,1:] - state.var[:,:,:-1])
     
         # Periodic boundary conditions
         # x
-        state.grad_x[-1,:,:] = self.grad_x*(state.var[0,:,:] - state.var[-2,:,:])
+        state.grad_x[0,:,:] = self.grad_x*(state.var[0,:,:] - state.var[-1,:,:])
         # y
-        state.grad_y[:,-1,:] = self.grad_y*(state.var[:,0,:] - state.var[:,-2,:])
+        state.grad_y[:,0,:] = self.grad_y*(state.var[:,0,:] - state.var[:,-1,:])
         # z
-        state.grad_z[:,:,-1] = self.grad_z*(state.var[:,:,0] - state.var[:,:,-2])
-
+        state.grad_z[:,:,0] = self.grad_z*(state.var[:,:,0] - state.var[:,:,-1])
 
 
     # -------------------------------------------------
-    # Divergence of the viscous flux to the cell x-face
-    def div_visc_x(self,SC,div_x):
-        div_x[:-1,:,:] += self.div_x*(SC[1:,:,:] - SC[:-1,:,:])
+    # Divergence of the x-velocity viscous flux
+    def div_visc(self,FX,FY,FZ,rhs_u):
+        rhs_u[:-1,:,:] += self.div_x*(FX[1:,:,:] - FX[:-1,:,:])
+        rhs_u[:,:-1,:] += self.div_y*(FY[:,1:,:] - FY[:,:-1,:])
+        rhs_u[:,:,:-1] += self.div_z*(FZ[:,:,1:] - FZ[:,:,:-1])
     
         # Periodic boundary conditions
-        div_x[-1,:,:] += self.div_x*(SC[0,:,:] - SC[-2,:,:])
+        rhs_u[-1,:,:] += self.div_x*(FX[0,:,:] - FX[-1,:,:])
+        rhs_u[:,-1,:] += self.div_y*(FY[:,0,:] - FY[:,-1,:])
+        rhs_u[:,:,-1] += self.div_z*(FZ[:,:,0] - FZ[:,:,-1])
 
-        
-    # -------------------------------------------------
-    # Divergence of the viscous flux to the cell y-face
-    def div_visc_y(self,SC,div_y):
-        div_y[:,:-1,:] += self.div_y*(SC[:,1:,:] - SC[:,:-1,:])
 
-        # Periodic boundary conditions
-        div_y[:,-1,:] += self.div_y*(SC[:,0,:] - SC[:,-2,:])
-
-        
-    # -------------------------------------------------
-    # Divergence of the viscous flux to the cell z-face
-    def div_visc_z(self,SC,div_z):
-        div_z[:,:,:-1] += self.div_z*(SC[:,:,1:] - SC[:,:,:-1])
-
-        # Periodic boundary conditions
-        div_z[:,:,-1] += self.div_z*(SC[:,:,0] - SC[:,:,-2])
-
-        
     # -------------------------------------------------
     # Convective flux xx
     def vel_conv_xx(self,state_u,state_v,grad_x):

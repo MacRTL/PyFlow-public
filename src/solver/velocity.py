@@ -46,30 +46,24 @@ def rhs_predictor(rhs_u,rhs_v,rhs_w,state_u,state_v,state_w,uConv,vConv,wConv,mu
     metric.grad_vel_visc(state_v)
     metric.grad_vel_visc(state_w)
         
-    # Viscous fluxes
+    # Scalar diffusive fluxes
     # x
-    FX = 2.0*mu/rho * state_u.grad_x
-    FY = mu/rho * (state_u.grad_y + state_v.grad_x)
-    FZ = mu/rho * (state_u.grad_z + state_w.grad_x)
-    metric.div_visc_x(FX,rhs_u)
-    metric.div_visc_y(FY,rhs_u)
-    metric.div_visc_z(FZ,rhs_u)
+    FX = mu/rho * state_u.grad_x
+    FY = mu/rho * state_u.grad_y
+    FZ = mu/rho * state_u.grad_z
+    metric.div_visc(FX,FY,FZ,rhs_u)
     
     # y
-    FX = mu/rho * (state_v.grad_x + state_u.grad_y)
-    FY = 2.0*mu/rho * state_v.grad_y
-    FZ = mu/rho * (state_v.grad_z + state_w.grad_y)
-    metric.div_visc_x(FX,rhs_v)
-    metric.div_visc_y(FY,rhs_v)
-    metric.div_visc_z(FZ,rhs_v)
+    FX = mu/rho * state_v.grad_x
+    FY = mu/rho * state_v.grad_y
+    FZ = mu/rho * state_v.grad_z
+    metric.div_visc(FX,FY,FZ,rhs_v)
 
     # z
-    FX = mu/rho * (state_w.grad_x + state_u.grad_z)
-    FY = mu/rho * (state_w.grad_y + state_v.grad_z)
-    FZ = 2.0*mu/rho * state_w.grad_z
-    metric.div_visc_x(FX,rhs_w)
-    metric.div_visc_y(FY,rhs_w)
-    metric.div_visc_z(FZ,rhs_w)
+    FX = mu/rho * state_w.grad_x
+    FY = mu/rho * state_w.grad_y
+    FZ = mu/rho * state_w.grad_z
+    metric.div_visc(FX,FY,FZ,rhs_w)
     
     #Diffusion_term_u = state_u.grad_xx + state_u.grad_yy + state_u.grad_zz
     #Diffusion_term_v = state_v.grad_xx + state_v.grad_yy + state_v.grad_zz
@@ -135,6 +129,32 @@ def rhs_predictor(rhs_u,rhs_v,rhs_w,state_u,state_v,state_w,uConv,vConv,wConv,mu
 
     
 def SaveForLater():
+
+    # Navier-Stokes viscous fluxes
+    # x
+    FX = 2.0*mu/rho * state_u.grad_x
+    FY = mu/rho * (state_u.grad_y + state_v.grad_x)
+    FZ = mu/rho * (state_u.grad_z + state_w.grad_x)
+    metric.div_visc_x(FX,rhs_u)
+    metric.div_visc_y(FY,rhs_u)
+    metric.div_visc_z(FZ,rhs_u)
+    
+    # y
+    FX = mu/rho * (state_v.grad_x + state_u.grad_y)
+    FY = 2.0*mu/rho * state_v.grad_y
+    FZ = mu/rho * (state_v.grad_z + state_w.grad_y)
+    metric.div_visc_x(FX,rhs_v)
+    metric.div_visc_y(FY,rhs_v)
+    metric.div_visc_z(FZ,rhs_v)
+
+    # z
+    FX = mu/rho * (state_w.grad_x + state_u.grad_z)
+    FY = mu/rho * (state_w.grad_y + state_v.grad_z)
+    FZ = 2.0*mu/rho * state_w.grad_z
+    metric.div_visc_x(FX,rhs_w)
+    metric.div_visc_y(FY,rhs_w)
+    metric.div_visc_z(FZ,rhs_w)
+    
     
     # Navier-Stokes convective fluxes
     # xx
