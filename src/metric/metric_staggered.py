@@ -168,14 +168,14 @@ class metric_generic:
     # -------------------------------------------------
     # Divergence of the viscous fluxes
     def div_visc(self,FX,FY,FZ,rhs_u):
-        rhs_u[:-1,:,:] += self.div_x*(FX[1:,:,:] - FX[:-1,:,:])
-        rhs_u[:,:-1,:] += self.div_y*(FY[:,1:,:] - FY[:,:-1,:])
-        rhs_u[:,:,:-1] += self.div_z*(FZ[:,:,1:] - FZ[:,:,:-1])
+        rhs_u[:-1,:,:] += (FX[1:,:,:] - FX[:-1,:,:])*self.div_x
+        rhs_u[:,:-1,:] += (FY[:,1:,:] - FY[:,:-1,:])*self.div_y
+        rhs_u[:,:,:-1] += (FZ[:,:,1:] - FZ[:,:,:-1])*self.div_z
     
         # Periodic boundary conditions
-        rhs_u[-1,:,:] += self.div_x*(FX[0,:,:] - FX[-1,:,:])
-        rhs_u[:,-1,:] += self.div_y*(FY[:,0,:] - FY[:,-1,:])
-        rhs_u[:,:,-1] += self.div_z*(FZ[:,:,0] - FZ[:,:,-1])
+        rhs_u[-1,:,:] += (FX[0,:,:] - FX[-1,:,:])*self.div_x
+        rhs_u[:,-1,:] += (FY[:,0,:] - FY[:,-1,:])*self.div_y
+        rhs_u[:,:,-1] += (FZ[:,:,0] - FZ[:,:,-1])*self.div_z
 
         
     # -------------------------------------------------
@@ -184,90 +184,90 @@ class metric_generic:
         # Zero the divergence
         divg.zero_()
         
-        divg[:-1,:,:] += self.grad_x*(state_u.var[1:,:,:] - state_u.var[:-1,:,:])
-        divg[:,:-1,:] += self.grad_y*(state_v.var[:,1:,:] - state_v.var[:,:-1,:])
-        divg[:,:,:-1] += self.grad_z*(state_w.var[:,:,1:] - state_w.var[:,:,:-1])
+        divg[:-1,:,:] += (state_u.var[1:,:,:] - state_u.var[:-1,:,:])*self.grad_x
+        divg[:,:-1,:] += (state_v.var[:,1:,:] - state_v.var[:,:-1,:])*self.grad_y
+        divg[:,:,:-1] += (state_w.var[:,:,1:] - state_w.var[:,:,:-1])*self.grad_z
     
         # Periodic boundary conditions
-        divg[-1,:,:] += self.grad_x*(state_u.var[0,:,:] - state_u.var[-1,:,:])
-        divg[:,-1,:] += self.grad_y*(state_v.var[:,0,:] - state_v.var[:,-1,:])
-        divg[:,:,-1] += self.grad_z*(state_w.var[:,:,0] - state_w.var[:,:,-1])
+        divg[-1,:,:] += (state_u.var[0,:,:] - state_u.var[-1,:,:])*self.grad_x
+        divg[:,-1,:] += (state_v.var[:,0,:] - state_v.var[:,-1,:])*self.grad_y
+        divg[:,:,-1] += (state_w.var[:,:,0] - state_w.var[:,:,-1])*self.grad_z
 
 
     # -------------------------------------------------
     # Convective flux xx
     def vel_conv_xx(self,state_u,state_v,grad_x):
         
-        grad_x[1:,:,:] -= self.grad_x*( state_u.var_i[1:,:,:] * state_v.var_i[1:,:,:]
-                                        - state_u.var_i[:-1,:,:] * state_v.var_i[:-1,:,:] )
+        grad_x[1:,:,:] -= ( state_u.var_i[1:,:,:] * state_v.var_i[1:,:,:]
+                            - state_u.var_i[:-1,:,:] * state_v.var_i[:-1,:,:] )*self.grad_x
 
         # Periodic boundary conditions
-        grad_x[0,:,:] -= self.grad_x*( state_u.var_i[0,:,:] * state_v.var_i[0,:,:]
-                                       - state_u.var_i[-1,:,:] * state_v.var_i[-1,:,:] )
+        grad_x[0,:,:] -= ( state_u.var_i[0,:,:] * state_v.var_i[0,:,:]
+                           - state_u.var_i[-1,:,:] * state_v.var_i[-1,:,:] )*self.grad_x
         
     # -------------------------------------------------
     # Convective flux yy
     def vel_conv_yy(self,state_u,state_v,grad_y):
         
-        grad_y[:,1:,:] -= self.grad_y*( state_u.var_i[:,1:,:] * state_v.var_i[:,1:,:]
-                                        - state_u.var_i[:,:-1,:] * state_v.var_i[:,:-1,:] )
+        grad_y[:,1:,:] -= ( state_u.var_i[:,1:,:] * state_v.var_i[:,1:,:]
+                            - state_u.var_i[:,:-1,:] * state_v.var_i[:,:-1,:] )*self.grad_y
 
         # Periodic boundary conditions
-        grad_y[:,0,:] -= self.grad_y*( state_u.var_i[:,0,:] * state_v.var_i[:,0,:]
-                                       - state_u.var_i[:,-1,:] * state_v.var_i[:,-1,:] )
+        grad_y[:,0,:] -= ( state_u.var_i[:,0,:] * state_v.var_i[:,0,:]
+                           - state_u.var_i[:,-1,:] * state_v.var_i[:,-1,:] )*self.grad_y
         
     # -------------------------------------------------
     # Convective flux zz
     def vel_conv_zz(self,state_u,state_v,grad_z):
         
-        grad_z[:,:,1:] -= self.grad_z*( state_u.var_i[:,:,1:] * state_v.var_i[:,:,1:]
-                                        - state_u.var_i[:,:,:-1] * state_v.var_i[:,:,:-1] )
+        grad_z[:,:,1:] -= ( state_u.var_i[:,:,1:] * state_v.var_i[:,:,1:]
+                            - state_u.var_i[:,:,:-1] * state_v.var_i[:,:,:-1] )*self.grad_z
 
         # Periodic boundary conditions
-        grad_z[:,:,0] -= self.grad_z*( state_u.var_i[:,:,0] * state_v.var_i[:,:,0]
-                                       - state_u.var_i[:,:,-1] * state_v.var_i[:,:,-1] )
+        grad_z[:,:,0] -= ( state_u.var_i[:,:,0] * state_v.var_i[:,:,0]
+                           - state_u.var_i[:,:,-1] * state_v.var_i[:,:,-1] )*self.grad_z
         
     # -------------------------------------------------
     # Convective flux yy
     def vel_conv_yy(self,state_u,state_v,grad_y):
         
-        grad_y[:,1:,:] -= self.grad_y*( state_u.var_i[:,1:,:] * state_v.var_i[:,1:,:]
-                                        - state_u.var_i[:,:-1,:] * state_v.var_i[:,:-1,:] )
+        grad_y[:,1:,:] -= ( state_u.var_i[:,1:,:] * state_v.var_i[:,1:,:]
+                            - state_u.var_i[:,:-1,:] * state_v.var_i[:,:-1,:] )*self.grad_y
 
         # Periodic boundary conditions
-        grad_y[:,0,:] -= self.grad_y*( state_u.var_i[:,0,:] * state_v.var_i[:,0,:]
-                                       - state_u.var_i[:,-1,:] * state_v.var_i[:,-1,:] )
+        grad_y[:,0,:] -= ( state_u.var_i[:,0,:] * state_v.var_i[:,0,:]
+                           - state_u.var_i[:,-1,:] * state_v.var_i[:,-1,:] )*self.grad_y
         
     # -------------------------------------------------
     # Off-diagonal convective flux x
     def vel_conv_x(self,state_u,state_v,grad_x):
         
-        grad_x[:-1,:,:] -= self.grad_x*( state_u.var_i[1:,:,:] * state_v.var_i[1:,:,:]
-                                          - state_u.var_i[:-1,:,:] * state_v.var_i[:-1,:,:] )
+        grad_x[:-1,:,:] -= ( state_u.var_i[1:,:,:] * state_v.var_i[1:,:,:]
+                             - state_u.var_i[:-1,:,:] * state_v.var_i[:-1,:,:] )*self.grad_x
 
         # Periodic boundary conditions
-        grad_x[-1,:,:] -= self.grad_x*( state_u.var_i[0,:,:] * state_v.var_i[0,:,:]
-                                        - state_u.var_i[-1,:,:] * state_v.var_i[-1,:,:] )
+        grad_x[-1,:,:] -= ( state_u.var_i[0,:,:] * state_v.var_i[0,:,:]
+                            - state_u.var_i[-1,:,:] * state_v.var_i[-1,:,:] )*self.grad_x
         
     # -------------------------------------------------
     # Off-diagonal convective flux y
     def vel_conv_y(self,state_u,state_v,grad_y):
         
-        grad_y[:,:-1,:] -= self.grad_y*( state_u.var_i[:,1:,:] * state_v.var_i[:,1:,:]
-                                          - state_u.var_i[:,:-1,:] * state_v.var_i[:,:-1,:] )
+        grad_y[:,:-1,:] -= ( state_u.var_i[:,1:,:] * state_v.var_i[:,1:,:]
+                             - state_u.var_i[:,:-1,:] * state_v.var_i[:,:-1,:] )*self.grad_y
 
         # Periodic boundary conditions
-        grad_y[:,-1,:] -= self.grad_y*( state_u.var_i[:,0,:] * state_v.var_i[:,0,:]
-                                        - state_u.var_i[:,-1,:] * state_v.var_i[:,-1,:] )
+        grad_y[:,-1,:] -= ( state_u.var_i[:,0,:] * state_v.var_i[:,0,:]
+                            - state_u.var_i[:,-1,:] * state_v.var_i[:,-1,:] )*self.grad_y
         
     # -------------------------------------------------
     # Off-diagonal convective flux z
     def vel_conv_z(self,state_u,state_v,grad_z):
         
-        grad_z[:,:,:-1] -= self.grad_z*( state_u.var_i[:,:,1:] * state_v.var_i[:,:,1:]
-                                          - state_u.var_i[:,:,:-1] * state_v.var_i[:,:,:-1] )
+        grad_z[:,:,:-1] -= ( state_u.var_i[:,:,1:] * state_v.var_i[:,:,1:]
+                             - state_u.var_i[:,:,:-1] * state_v.var_i[:,:,:-1] )*self.grad_z
 
         # Periodic boundary conditions
-        grad_z[:,:,-1] -= self.grad_z*( state_u.var_i[:,:,0] * state_v.var_i[:,:,0]
-                                        - state_u.var_i[:,:,-1] * state_v.var_i[:,:,-1] )
+        grad_z[:,:,-1] -= ( state_u.var_i[:,:,0] * state_v.var_i[:,:,0]
+                            - state_u.var_i[:,:,-1] * state_v.var_i[:,:,-1] )*self.grad_z
 

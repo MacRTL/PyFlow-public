@@ -75,8 +75,8 @@ import sfsmodel_smagorinsky
 
 # Simulation geometry
 #   Options: restart, periodicGaussian, notAchannel
-configName = "restart"
-#configName = "periodicGaussian"
+#configName = "restart"
+configName = "periodicGaussian"
 #configName = "notAchannel"
 configNx   = 64
 configNy   = 64
@@ -107,6 +107,7 @@ solverName   = "RK4"
 genericOrder = 2
 Num_pressure_iterations = 1000
 equationMode = "NS"
+plotState    = False
 
 # Comparison options
 useTargetData = False
@@ -333,11 +334,12 @@ for iterations in range(1):
     lineStr = "  {:10d}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}"
     print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW))
 
-    # Plot the initial state
-    dr.plotData(state_u_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_U_"+str(itCount))
-    dr.plotData(state_v_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_V_"+str(itCount))
-    dr.plotData(state_w_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_W_"+str(itCount))
-    dr.plotData(state_p_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_p_"+str(itCount))
+    if (plotState):
+        # Plot the initial state
+        dr.plotData(state_u_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_U_"+str(itCount))
+        dr.plotData(state_v_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_V_"+str(itCount))
+        dr.plotData(state_w_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_W_"+str(itCount))
+        dr.plotData(state_p_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_p_"+str(itCount))
 
     # Compute the initial energy
     initEnergy = torch.sum(state_u_P.var**2 + state_v_P.var**2 + state_w_P.var**2)
@@ -439,82 +441,85 @@ for iterations in range(1):
         max_res_P = 0.0
 
         # Matrix equation (3D)
-        DInv  = -geometry.dx**2/6.0 # Centers - uniform grid
-        DInvF = -geometry.dx**2*0.2 # Faces - uniform grid
-        DInvC = -geometry.dx**2/3.0 # Corners - uniform grid
-        EFacX = -1.0/geometry.dx**2
-        EFacY = -1.0/geometry.dy**2
-        EFacZ = -1.0/geometry.dz**2
-        FFacX = -1.0/geometry.dx**2
-        FFacY = -1.0/geometry.dy**2
-        FFacZ = -1.0/geometry.dz**2
+        DInv  = 1.0/6.0
+        DInvF = 0.2
+        DInvC = 1.0/3.0
+        #DInv  = -geometry.dx**2/6.0 # Centers - uniform grid
+        #DInvF = -geometry.dx**2*0.2 # Faces - uniform grid
+        #DInvC = -geometry.dx**2/3.0 # Corners - uniform grid
+        #EFacX = -1.0/geometry.dx**2
+        #EFacY = -1.0/geometry.dy**2
+        #EFacZ = -1.0/geometry.dz**2
+        #FFacX = -1.0/geometry.dx**2
+        #FFacY = -1.0/geometry.dy**2
+        #FFacZ = -1.0/geometry.dz**2
         
         for j in range( Num_pressure_iterations ):
             # Initial guess is p from previous time step
-            p_OLD_P.copy_(state_p_P.var)
+            p_OLD_P.copy_(state_p_P.var).cuda()
             
             # Interior points
-            state_p_P.var[1:-1,1:-1,1:-1] = DInv*( FFacX* p_OLD_P[2:,1:-1,1:-1] + EFacX*p_OLD_P[:-2,1:-1,1:-1]
-                                                   +FFacY*p_OLD_P[1:-1,2:,1:-1] + EFacY*p_OLD_P[1:-1,:-2,1:-1]
-                                                   +FFacZ*p_OLD_P[1:-1,1:-1,2:] + EFacZ*p_OLD_P[1:-1,1:-1,:-2]
-                                                   + source_P[1:-1,1:-1,1:-1] )
+            state_p_P.var[1:-1,1:-1,1:-1] = ( p_OLD_P[2:,1:-1,1:-1] + p_OLD_P[:-2,1:-1,1:-1]
+                                              +p_OLD_P[1:-1,2:,1:-1] + p_OLD_P[1:-1,:-2,1:-1]
+                                              +p_OLD_P[1:-1,1:-1,2:] + p_OLD_P[1:-1,1:-1,:-2]
+                                              + source_P[1:-1,1:-1,1:-1] )*DInv
 
             # Boundary conditions - Neumann zero normal gradient
             # -x face
-            state_p_P.var[ 0,1:-1,1:-1] = DInvF*( FFacX *p_OLD_P[1,1:-1,1:-1]
-                                                  +FFacY*p_OLD_P[0,2:,1:-1] + EFacY*p_OLD_P[0,:-2,1:-1]
-                                                  +FFacZ*p_OLD_P[0,1:-1,2:] + EFacZ*p_OLD_P[0,1:-1,:-2]
+            state_p_P.var[ 0,1:-1,1:-1] = DInvF*( p_OLD_P[1,1:-1,1:-1]
+                                                  +p_OLD_P[0,2:,1:-1] + p_OLD_P[0,:-2,1:-1]
+                                                  +p_OLD_P[0,1:-1,2:] + p_OLD_P[0,1:-1,:-2]
                                                   + source_P[0,1:-1,1:-1] )
             # +x face
-            state_p_P.var[-1,1:-1,1:-1] = DInvF*( EFacX *p_OLD_P[-2,1:-1,1:-1]
-                                                 +FFacY*p_OLD_P[-1,2:,1:-1] + EFacY*p_OLD_P[-1,:-2,1:-1]
-                                                 +FFacZ*p_OLD_P[-1,1:-1,2:] + EFacZ*p_OLD_P[-1,1:-1,:-2]
-                                                 + source_P[-1,1:-1,1:-1] )
+            state_p_P.var[-1,1:-1,1:-1] = DInvF*( p_OLD_P[-2,1:-1,1:-1]
+                                                  +p_OLD_P[-1,2:,1:-1] + p_OLD_P[-1,:-2,1:-1]
+                                                  +p_OLD_P[-1,1:-1,2:] + p_OLD_P[-1,1:-1,:-2]
+                                                  + source_P[-1,1:-1,1:-1] )
             # -y face
-            state_p_P.var[1:-1, 0,1:-1] = DInvF*( FFacX *p_OLD_P[2:,0,1:-1] + EFacX*p_OLD_P[:-2,0,1:-1]
-                                                 +FFacY*p_OLD_P[1:-1,1,1:-1]
-                                                 +FFacZ*p_OLD_P[1:-1,0,2:] + EFacZ*p_OLD_P[1:-1,0,:-2]
-                                                 + source_P[1:-1,0,1:-1] )
+            state_p_P.var[1:-1, 0,1:-1] = DInvF*( p_OLD_P[2:,0,1:-1] + p_OLD_P[:-2,0,1:-1]
+                                                  +p_OLD_P[1:-1,1,1:-1]
+                                                  +p_OLD_P[1:-1,0,2:] + p_OLD_P[1:-1,0,:-2]
+                                                  + source_P[1:-1,0,1:-1] )
             # +y face
-            state_p_P.var[1:-1,-1,1:-1] = DInvF*( FFacX *p_OLD_P[2:,-1,1:-1] + EFacX*p_OLD_P[:-2,-1,1:-1]
-                                                 +EFacY*p_OLD_P[1:-1,-2,1:-1]
-                                                 +FFacZ*p_OLD_P[1:-1,-1,2:] + EFacZ*p_OLD_P[1:-1,-1,:-2]
-                                                 + source_P[1:-1,-1,1:-1] )
+            state_p_P.var[1:-1,-1,1:-1] = DInvF*( p_OLD_P[2:,-1,1:-1] + p_OLD_P[:-2,-1,1:-1]
+                                                  +p_OLD_P[1:-1,-2,1:-1]
+                                                  +p_OLD_P[1:-1,-1,2:] + p_OLD_P[1:-1,-1,:-2]
+                                                  + source_P[1:-1,-1,1:-1] )
             # -z face
-            state_p_P.var[1:-1,1:-1, 0] = DInvF*( FFacX *p_OLD_P[2:,1:-1,0] + EFacX*p_OLD_P[:-2,1:-1,0]
-                                                 +FFacY*p_OLD_P[1:-1,2:,0] + EFacY*p_OLD_P[1:-1,:-2,0]
-                                                 +FFacZ*p_OLD_P[1:-1,1:-1,1]
-                                                 + source_P[1:-1,1:-1,0] )
+            state_p_P.var[1:-1,1:-1, 0] = DInvF*( p_OLD_P[2:,1:-1,0] + p_OLD_P[:-2,1:-1,0]
+                                                  +p_OLD_P[1:-1,2:,0] + p_OLD_P[1:-1,:-2,0]
+                                                  +p_OLD_P[1:-1,1:-1,1]
+                                                  + source_P[1:-1,1:-1,0] )
             # +z face
-            state_p_P.var[1:-1,1:-1,-1] = DInvF*( FFacX *p_OLD_P[2:,1:-1,-1] + EFacX*p_OLD_P[:-2,1:-1,-1]
-                                                 +FFacY*p_OLD_P[1:-1,2:,-1] + EFacY*p_OLD_P[1:-1,:-2,-1]
-                                                 +FFacZ*p_OLD_P[1:-1,1:-1,-2]
-                                                 + source_P[1:-1,1:-1,-1] )
+            state_p_P.var[1:-1,1:-1,-1] = DInvF*( p_OLD_P[2:,1:-1,-1] + p_OLD_P[:-2,1:-1,-1]
+                                                  +p_OLD_P[1:-1,2:,-1] + p_OLD_P[1:-1,:-2,-1]
+                                                  +p_OLD_P[1:-1,1:-1,-2]
+                                                  + source_P[1:-1,1:-1,-1] )
             # corner 1: 0,0,0
-            state_p_P.var[0,0,0] = DInvC*( FFacX*p_OLD_P[1,0,0] + FFacY*p_OLD_P[0,1,0] + FFacZ*p_OLD_P[0,0,1]
-                                          + source_P[0,0,0] )
+            state_p_P.var[0,0,0] = DInvC*( p_OLD_P[1,0,0] + p_OLD_P[0,1,0] + p_OLD_P[0,0,1]
+                                           + source_P[0,0,0] )
             # corner 2: -1,0,0
-            state_p_P.var[-1,0,0] = DInvC*( EFacX*p_OLD_P[-2,0,0] + FFacY*p_OLD_P[-1,1,0] + FFacZ*p_OLD_P[-1,0,1]
-                                           + source_P[-1,0,0] )
+            state_p_P.var[-1,0,0] = DInvC*( p_OLD_P[-2,0,0] + p_OLD_P[-1,1,0] + p_OLD_P[-1,0,1]
+                                            + source_P[-1,0,0] )
             # corner 3: 0,-1,0
-            state_p_P.var[0,-1,0] = DInvC*( FFacX*p_OLD_P[1,-1,0] + EFacY*p_OLD_P[0,-2,0] + FFacZ*p_OLD_P[0,-1,1]
-                                           + source_P[0,-1,0] )
+            state_p_P.var[0,-1,0] = DInvC*( p_OLD_P[1,-1,0] + p_OLD_P[0,-2,0] + p_OLD_P[0,-1,1]
+                                            + source_P[0,-1,0] )
             # corner 4: -1,-1,0
-            state_p_P.var[-1,-1,0] = DInvC*( EFacX*p_OLD_P[-2,-1,0] + EFacY*p_OLD_P[-1,-2,0] + FFacZ*p_OLD_P[-1,-1,1]
-                                            + source_P[-1,-1,0] )
+            state_p_P.var[-1,-1,0] = DInvC*( p_OLD_P[-2,-1,0] + p_OLD_P[-1,-2,0] + p_OLD_P[-1,-1,1]
+                                             + source_P[-1,-1,0] )
             
             # corner 5: 0,0,-1
-            state_p_P.var[0,0,-1] = DInvC*( FFacX*p_OLD_P[1,0,-1] + FFacY*p_OLD_P[0,1,-1] + EFacZ*p_OLD_P[0,0,-2]
-                                           + source_P[0,0,-1] )
+            state_p_P.var[0,0,-1] = DInvC*( p_OLD_P[1,0,-1] + p_OLD_P[0,1,-1] + p_OLD_P[0,0,-2]
+                                            + source_P[0,0,-1] )
             # corner 6: -1,0,-1
-            state_p_P.var[-1,0,-1] = DInvC*( EFacX*p_OLD_P[-2,0,-1] + FFacY*p_OLD_P[-1,1,-1] + EFacZ*p_OLD_P[-1,0,-2]
-                                            + source_P[-1,0,-1] )
+            state_p_P.var[-1,0,-1] = DInvC*( p_OLD_P[-2,0,-1] + p_OLD_P[-1,1,-1] + p_OLD_P[-1,0,-2]
+                                             + source_P[-1,0,-1] )
             # corner 7: 0,-1,-1
-            state_p_P.var[0,-1,-1] = DInvC*( FFacX*p_OLD_P[1,-1,-1] + EFacY*p_OLD_P[0,-2,-1] + EFacZ*p_OLD_P[0,-1,-2]
-                                            + source_P[0,-1,-1] )
+            state_p_P.var[0,-1,-1] = DInvC*( p_OLD_P[1,-1,-1] + p_OLD_P[0,-2,-1] + p_OLD_P[0,-1,-2]
+                                             + source_P[0,-1,-1] )
             # corner 8: -1,-1,-1
-            state_p_P.var[-1,-1,-1] = DInvC*( EFacX*p_OLD_P[-2,-1,-1] + EFacY*p_OLD_P[-1,-2,-1] + EFacZ*p_OLD_P[-1,-1,-2]
-                                             + source_P[-1,-1,-1] )
+            state_p_P.var[-1,-1,-1] = DInvC*( p_OLD_P[-2,-1,-1] + p_OLD_P[-1,-2,-1] + p_OLD_P[-1,-1,-2]
+                                              + source_P[-1,-1,-1] )
             
         # Compute max pressure residual
         max_res_P = torch.max(torch.abs(state_p_P.var - p_OLD_P))
@@ -585,8 +590,9 @@ for iterations in range(1):
         print("it={}, test={}, elapsed={}, energy init/final={}".format(iterations,test,time_elapsed,
                                                                         initEnergy/finalEnergy))
 
-    # Print a pretty picture
-    dr.plotData(state_u_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_U_"+str(itCount))
-    dr.plotData(state_v_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_V_"+str(itCount))
-    dr.plotData(state_w_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_W_"+str(itCount))
-    dr.plotData(state_p_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_p_"+str(itCount))
+    if (plotState):
+        # Print a pretty picture
+        dr.plotData(state_u_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_U_"+str(itCount))
+        dr.plotData(state_v_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_V_"+str(itCount))
+        dr.plotData(state_w_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_W_"+str(itCount))
+        dr.plotData(state_p_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_p_"+str(itCount))

@@ -42,10 +42,16 @@ class rhs_scalar:
             self.rhs_u = torch.FloatTensor(IC_zeros).cuda()
             self.rhs_v = torch.FloatTensor(IC_zeros).cuda()
             self.rhs_w = torch.FloatTensor(IC_zeros).cuda()
+            self.FX    = torch.FloatTensor(IC_zeros).cuda()
+            self.FY    = torch.FloatTensor(IC_zeros).cuda()
+            self.FZ    = torch.FloatTensor(IC_zeros).cuda()
         else:
             self.rhs_u = torch.FloatTensor(IC_zeros)
             self.rhs_v = torch.FloatTensor(IC_zeros)
             self.rhs_w = torch.FloatTensor(IC_zeros)
+            self.FX    = torch.FloatTensor(IC_zeros)
+            self.FY    = torch.FloatTensor(IC_zeros)
+            self.FZ    = torch.FloatTensor(IC_zeros)
 
             
     # ----------------------------------------------------
@@ -63,22 +69,22 @@ class rhs_scalar:
         
         # Scalar diffusive fluxes
         # x
-        FX = mu/rho * state_u.grad_x
-        FY = mu/rho * state_u.grad_y
-        FZ = mu/rho * state_u.grad_z
-        metric.div_visc(FX,FY,FZ,self.rhs_u)
+        self.FX = mu/rho * state_u.grad_x
+        self.FY = mu/rho * state_u.grad_y
+        self.FZ = mu/rho * state_u.grad_z
+        metric.div_visc(self.FX,self.FY,self.FZ,self.rhs_u)
         
         # y
-        FX = mu/rho * state_v.grad_x
-        FY = mu/rho * state_v.grad_y
-        FZ = mu/rho * state_v.grad_z
-        metric.div_visc(FX,FY,FZ,self.rhs_v)
+        self.FX = mu/rho * state_v.grad_x
+        self.FY = mu/rho * state_v.grad_y
+        self.FZ = mu/rho * state_v.grad_z
+        metric.div_visc(self.FX,self.FY,self.FZ,self.rhs_v)
         
         # z
-        FX = mu/rho * state_w.grad_x
-        FY = mu/rho * state_w.grad_y
-        FZ = mu/rho * state_w.grad_z
-        metric.div_visc(FX,FY,FZ,self.rhs_w)
+        self.FX = mu/rho * state_w.grad_x
+        self.FY = mu/rho * state_w.grad_y
+        self.FZ = mu/rho * state_w.grad_z
+        metric.div_visc(self.FX,self.FY,self.FZ,self.rhs_w)
         
         # Scalar advective fluxes
         # xx
@@ -132,10 +138,16 @@ class rhs_NavierStokes:
             self.rhs_u = torch.FloatTensor(IC_zeros).cuda()
             self.rhs_v = torch.FloatTensor(IC_zeros).cuda()
             self.rhs_w = torch.FloatTensor(IC_zeros).cuda()
+            self.FX    = torch.FloatTensor(IC_zeros).cuda()
+            self.FY    = torch.FloatTensor(IC_zeros).cuda()
+            self.FZ    = torch.FloatTensor(IC_zeros).cuda()
         else:
             self.rhs_u = torch.FloatTensor(IC_zeros)
             self.rhs_v = torch.FloatTensor(IC_zeros)
             self.rhs_w = torch.FloatTensor(IC_zeros)
+            self.FX    = torch.FloatTensor(IC_zeros)
+            self.FY    = torch.FloatTensor(IC_zeros)
+            self.FZ    = torch.FloatTensor(IC_zeros)
 
             
     # ----------------------------------------------------
@@ -153,22 +165,22 @@ class rhs_NavierStokes:
         
         # Viscous fluxes
         # x
-        FX = 2.0*mu/rho * state_u.grad_x
-        FY = mu/rho * (state_u.grad_y + state_v.grad_x)
-        FZ = mu/rho * (state_u.grad_z + state_w.grad_x)
-        metric.div_visc(FX,FY,FZ,self.rhs_u)
+        self.FX = 2.0*mu/rho * state_u.grad_x
+        self.FY = mu/rho * (state_u.grad_y + state_v.grad_x)
+        self.FZ = mu/rho * (state_u.grad_z + state_w.grad_x)
+        metric.div_visc(self.FX,self.FY,self.FZ,self.rhs_u)
         
         # y
-        FX = mu/rho * (state_v.grad_x + state_u.grad_y)
-        FY = 2.0*mu/rho * state_v.grad_y
-        FZ = mu/rho * (state_v.grad_z + state_w.grad_y)
-        metric.div_visc(FX,FY,FZ,self.rhs_v)
+        self.FX = mu/rho * (state_v.grad_x + state_u.grad_y)
+        self.FY = 2.0*mu/rho * state_v.grad_y
+        self.FZ = mu/rho * (state_v.grad_z + state_w.grad_y)
+        metric.div_visc(self.FX,self.FY,self.FZ,self.rhs_v)
         
         # z
-        FX = mu/rho * (state_w.grad_x + state_u.grad_z)
-        FY = mu/rho * (state_w.grad_y + state_v.grad_z)
-        FZ = 2.0*mu/rho * state_w.grad_z
-        metric.div_visc(FX,FY,FZ,self.rhs_w)
+        self.FX = mu/rho * (state_w.grad_x + state_u.grad_z)
+        self.FY = mu/rho * (state_w.grad_y + state_v.grad_z)
+        self.FZ = 2.0*mu/rho * state_w.grad_z
+        metric.div_visc(self.FX,self.FY,self.FZ,self.rhs_w)
         
         # Advective fluxes
         # xx
