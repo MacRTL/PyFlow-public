@@ -74,28 +74,33 @@ import sfsmodel_smagorinsky
 # ----------------------------------------------------
 
 # Simulation geometry
-#   Options: restart, periodicGaussian, notAchannel
+#   Options: restart, periodicGaussian, uniform, notAchannel
 #configName = "restart"
 configName = "periodicGaussian"
+#configName = "uniform"
 #configName = "notAchannel"
-configNx   = 64
-configNy   = 64
-configNz   = 64
+configNx   = 256
+configNy   = 256
+configNz   = 256
 configLx   = 1.0
 configLy   = 1.0
 configLz   = 1.0
+#configLx   = 0.008
+#configLy   = 0.008
+#configLz   = 0.008
 
 # Restart and target files to read
 if (configName=='restart'):
     restartFileStr = '../../examples/filtered_vol_dnsbox_1024_Lx0.045_NR_00000020_coarse'
 
 # Model constants
-mu  = 1.8678e-5
+mu  = 0.0 #1.8678e-5
 rho = 1.2
 
 # Time step
-simDt    = 1.25e-3
-numIt    = 50
+simDt    = 2.5e-3 #5e-6
+numIt    = 200
+numItOut = 10
 stopTime = numIt*simDt
 
 # SFS model
@@ -105,20 +110,17 @@ SFSModel = False
 #   Options: Euler, RK4
 solverName   = "RK4"
 genericOrder = 2
-Num_pressure_iterations = 1000
-equationMode = "NS"
-plotState    = False
+Num_pressure_iterations = 0
+equationMode = "scalar"
+plotState    = True
+precision    = torch.float64
 
 # Comparison options
 useTargetData = False
-
 if (useTargetData):
     targetFileStr  = restartFileStr
 
-
-#restartFileStr = '/projects/sciteam/baxh/Downsampled_Data_Folder/data_1024_Lx0.045_NR_Delta32_downsample8x/filtered_vol_dnsbox_1024_Lx0.045_NR_00000020_coarse'
-#targetFileStr  = '/projects/sciteam/baxh/Downsampled_Data_Folder/data_1024_Lx0.045_NR_Delta32_downsample8x/filtered_vol_dnsbox_1024_Lx0.045_NR_00000030_coarse'
-
+torch.set_num_threads(2)
 
 # ----------------------------------------------------
 # Configure simulation
@@ -137,18 +139,18 @@ if (configName=='restart'):
     
 elif (configName=='periodicGaussian'):
     # Initialize the uniform grid
-    xGrid = np.linspace(-0.5*configLx,0.5*configLx,configNx)
-    yGrid = np.linspace(-0.5*configLy,0.5*configLy,configNy)
-    zGrid = np.linspace(-0.5*configLz,0.5*configLz,configNz)
+    xGrid = np.linspace(-0.5*configLx,0.5*configLx,configNx+1)
+    yGrid = np.linspace(-0.5*configLy,0.5*configLy,configNy+1)
+    zGrid = np.linspace(-0.5*configLz,0.5*configLz,configNz+1)
     
     # Initial condition
     uMax = 2.0
     vMax = 2.0
     wMax = 2.0
     stdDev = 0.1
-    gaussianBump = ( np.exp(  -0.5*(xGrid[:,np.newaxis,np.newaxis]/stdDev)**2)
-                     * np.exp(-0.5*(yGrid[np.newaxis,:,np.newaxis]/stdDev)**2)
-                     * np.exp(-0.5*(zGrid[np.newaxis,np.newaxis,:]/stdDev)**2) )
+    gaussianBump = ( np.exp(  -0.5*(xGrid[:-1,np.newaxis,np.newaxis]/stdDev)**2)
+                     * np.exp(-0.5*(yGrid[np.newaxis,:-1,np.newaxis]/stdDev)**2)
+                     * np.exp(-0.5*(zGrid[np.newaxis,np.newaxis,:-1]/stdDev)**2) )
     data_IC = np.zeros((configNx,configNy,configNz,4),dtype='float64')
     data_IC[:,:,:,0] = uMax * gaussianBump
     data_IC[:,:,:,1] = vMax * gaussianBump
@@ -156,35 +158,60 @@ elif (configName=='periodicGaussian'):
     data_IC[:,:,:,3] = 0.0
     del gaussianBump
 
+elif (configName=='uniform'):
+    # Uniform flow
+    # Initialize the uniform grid
+    xGrid = np.linspace(-0.5*configLx,0.5*configLx,configNx+1)
+    yGrid = np.linspace(-0.5*configLy,0.5*configLy,configNy+1)
+    zGrid = np.linspace(-0.5*configLz,0.5*configLz,configNz+1)
+    
+    uMax = 2.0
+    vMax = 2.0
+    wMax = 2.0
+    data_IC = np.zeros((configNx,configNy,configNz,4),dtype='float64')
+    data_IC[:,:,:,0] = uMax
+    data_IC[:,:,:,1] = vMax
+    data_IC[:,:,:,2] = wMax
+    data_IC[:,:,:,3] = 0.0
+
 elif (configName=='notAchannel'):
     # Not a channel; periodic BCs at +/- y; no walls
     # Initialize the uniform grid
-    xGrid = np.linspace(-0.5*configLx,0.5*configLx,configNx)
-    yGrid = np.linspace(-0.5*configLy,0.5*configLy,configNy)
-    zGrid = np.linspace(-0.5*configLz,0.5*configLz,configNz)
+    xGrid = np.linspace(-0.5*configLx,0.5*configLx,configNx+1)
+    yGrid = np.linspace(-0.5*configLy,0.5*configLy,configNy+1)
+    zGrid = np.linspace(-0.5*configLz,0.5*configLz,configNz+1)
     
     uMax = 2.0
     vMax = 0.0
     wMax = 0.0
-    amp  = 0.01
-    parabolaX = ( 6.0*(yGrid[np.newaxis,:,np.newaxis] + 0.5*configLy)
-                  *(0.5*configLy - yGrid[np.newaxis,:,np.newaxis])
+    amp  = 0.0
+    print("Bulk Re={:7f}".format(rho*uMax*configLy/mu))
+    parabolaX = ( 6.0*(yGrid[np.newaxis,:-1,np.newaxis] + 0.5*configLy)
+                  *(0.5*configLy - yGrid[np.newaxis,:-1,np.newaxis])
                   /configLy**2 )
     Unorm = np.sqrt(uMax**2 + wMax**2)
     data_IC = np.zeros((configNx,configNy,configNz,4),dtype='float64')
     data_IC[:,:,:,0] = (uMax * parabolaX
-                        + amp*Unorm*np.cos(16.0*3.1415926*xGrid[:,np.newaxis,np.newaxis]/configLx))
+                        + amp*Unorm*np.cos(16.0*3.1415926*xGrid[:-1,np.newaxis,np.newaxis]/configLx))
     data_IC[:,:,:,1] = 0.0
     data_IC[:,:,:,2] = (wMax * parabolaX
-                        + amp*Unorm*np.cos(16.0*3.1415926*zGrid[np.newaxis,np.newaxis,:]/configLz))
+                        + amp*Unorm*np.cos(16.0*3.1415926*zGrid[np.newaxis,np.newaxis,:-1]/configLz))
     data_IC[:,:,:,3] = 0.0
     del parabolaX
 
 # Initialize the geometry
-geometry = geo.uniform(xGrid,yGrid,zGrid)
+geometry = geo.uniform(xGrid,yGrid,zGrid,precision)
+
+# Local grid sizes
+nx_ = geometry.nx_
+ny_ = geometry.ny_
+nz_ = geometry.nz_
+imin_ = geometry.imin_; imax_ = geometry.imax_
+jmin_ = geometry.jmin_; jmax_ = geometry.jmax_
+kmin_ = geometry.kmin_; kmax_ = geometry.kmax_
 
 # Initialize the metrics
-metric = metric_staggered.metric_generic(geometry)
+metric = metric_staggered.metric_uniform(geometry)
 
 # Set up Torch state
 haveCuda = torch.cuda.is_available()
@@ -240,22 +267,17 @@ model_name = 'LES_model_NR_March2019'
 # ----------------------------------------------------
 
 # Allocate state data using PyTorch variables
-state_u_P = state.data_P(IC_u_np,IC_zeros_np)
-state_v_P = state.data_P(IC_v_np,IC_zeros_np)
-state_w_P = state.data_P(IC_w_np,IC_zeros_np)
-state_p_P = state.data_P(IC_zeros_np,IC_zeros_np)
-
-if (equationMode=='scalar'):
-    # TEMPORARY STATES FOR ADVECTION-DIFFUSION TEST
-    state_uConv_P = state.data_P(uMax*IC_ones_np,IC_zeros_np)
-    state_vConv_P = state.data_P(vMax*IC_ones_np,IC_zeros_np)
-    state_wConv_P = state.data_P(wMax*IC_ones_np,IC_zeros_np)
+state_u_P = state.data_P(geometry,IC_u_np)
+state_v_P = state.data_P(geometry,IC_v_np)
+state_w_P = state.data_P(geometry,IC_w_np)
+state_p_P = state.data_P(geometry,IC_zeros_np)
+state_pOld_P = state.data_P(geometry,IC_zeros_np)
 
 # Need a temporary velocity state for RK solvers
 if (solverName[:-1]=="RK"):
-    state_uTmp_P = state.data_P(IC_u_np,IC_zeros_np)
-    state_vTmp_P = state.data_P(IC_v_np,IC_zeros_np)
-    state_wTmp_P = state.data_P(IC_w_np,IC_zeros_np)
+    state_uTmp_P = state.data_P(geometry,IC_u_np)
+    state_vTmp_P = state.data_P(geometry,IC_v_np)
+    state_wTmp_P = state.data_P(geometry,IC_w_np)
 
 # Allocate workspace arrays
 if (haveCuda):
@@ -263,33 +285,33 @@ if (haveCuda):
     Closure_v_P = torch.FloatTensor( IC_zeros_np ).cuda()
     Closure_w_P = torch.FloatTensor( IC_zeros_np ).cuda()    
     
-    source_P = torch.FloatTensor( IC_zeros_np ).cuda()
-    p_OLD_P  = torch.FloatTensor( IC_zeros_np).cuda()
+    source_P = torch.zeros(nx_,ny_,nz_,dtype=precision).cuda()
+    #p_OLD_P  = torch.zeros(nx_,ny_,nz_,dtype=precision).cuda()
     
 else:
     Closure_u_P =  torch.FloatTensor( IC_zeros_np )
     Closure_v_P = torch.FloatTensor( IC_zeros_np )
     Closure_w_P = torch.FloatTensor( IC_zeros_np )    
     
-    source_P = torch.FloatTensor( IC_zeros_np )
-    p_OLD_P  = torch.FloatTensor( IC_zeros_np )
+    source_P = torch.zeros(nx_,ny_,nz_,dtype=precision)
+    #p_OLD_P  = torch.zeros(nx_,ny_,nz_,dtype=precision)
 
 
 # Allocate RHS objects
 if (equationMode=='scalar'):
     print("Solving scalar advection-diffusion equation")
-    rhs1 = velocity.rhs_scalar(IC_zeros_np)
+    rhs1 = velocity.rhs_scalar(geometry,uMax,vMax,wMax)
     if (solverName[:-1]=="RK"):
-        rhs2 = velocity.rhs_scalar(IC_zeros_np)
-        rhs3 = velocity.rhs_scalar(IC_zeros_np)
-        rhs4 = velocity.rhs_scalar(IC_zeros_np)
+        rhs2 = velocity.rhs_scalar(geometry,uMax,vMax,wMax)
+        rhs3 = velocity.rhs_scalar(geometry,uMax,vMax,wMax)
+        rhs4 = velocity.rhs_scalar(geometry,uMax,vMax,wMax)
 elif (equationMode=='NS'):
     print("Solving Navier-Stokes equations")
-    rhs1 = velocity.rhs_NavierStokes(IC_zeros_np)
+    rhs1 = velocity.rhs_NavierStokes(geometry)
     if (solverName[:-1]=="RK"):
-        rhs2 = velocity.rhs_NavierStokes(IC_zeros_np)
-        rhs3 = velocity.rhs_NavierStokes(IC_zeros_np)
-        rhs4 = velocity.rhs_NavierStokes(IC_zeros_np)
+        rhs2 = velocity.rhs_NavierStokes(geometry)
+        rhs3 = velocity.rhs_NavierStokes(geometry)
+        rhs4 = velocity.rhs_NavierStokes(geometry)
 else:
     print("Equation setting not recognized; consequences unknown...")
     
@@ -323,8 +345,12 @@ for iterations in range(1):
     simTime = 0.0
 
     # Write the stdout header
-    headStr = "  {:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}"
-    print(headStr.format("Step","Time","max CFL","max U","max V","max W","int RP","max res_P"))
+    if (equationMode=='NS'):
+        headStr = "  {:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}"
+        print(headStr.format("Step","Time","max CFL","max U","max V","max W","int RP","max res_P"))
+    else:
+        headStr = "  {:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}"
+        print(headStr.format("Step","Time","max CFL","max U","max V","max W"))
     
     # Write initial condition stats
     maxU = torch.max(state_u_P.var)
@@ -378,34 +404,37 @@ for iterations in range(1):
             state_w_P.var = state_w_P.var + ( rhs1.rhs_w - Closure_w_P )*simDt
 
         elif (solverName=="RK4"):
-            #
+            
             # [JFM] needs turbulence models
             
             # Stage 1
             rhs1.evaluate(state_u_P,state_v_P,state_w_P,mu,rho,metric)
             
             # Stage 2
-            state_uTmp_P.ZAXPY(0.5*simDt,rhs1.rhs_u,state_u_P.var)
-            state_vTmp_P.ZAXPY(0.5*simDt,rhs1.rhs_v,state_v_P.var)
-            state_wTmp_P.ZAXPY(0.5*simDt,rhs1.rhs_w,state_w_P.var)
+            state_uTmp_P.ZAXPY(0.5*simDt,rhs1.rhs_u,state_u_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
+            state_vTmp_P.ZAXPY(0.5*simDt,rhs1.rhs_v,state_v_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
+            state_wTmp_P.ZAXPY(0.5*simDt,rhs1.rhs_w,state_w_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
             rhs2.evaluate(state_uTmp_P,state_vTmp_P,state_wTmp_P,mu,rho,metric)
 
             # Stage 3
-            state_uTmp_P.ZAXPY(0.5*simDt,rhs2.rhs_u,state_u_P.var)
-            state_vTmp_P.ZAXPY(0.5*simDt,rhs2.rhs_v,state_v_P.var)
-            state_wTmp_P.ZAXPY(0.5*simDt,rhs2.rhs_w,state_w_P.var)
+            state_uTmp_P.ZAXPY(0.5*simDt,rhs2.rhs_u,state_u_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
+            state_vTmp_P.ZAXPY(0.5*simDt,rhs2.rhs_v,state_v_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
+            state_wTmp_P.ZAXPY(0.5*simDt,rhs2.rhs_w,state_w_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
             rhs3.evaluate(state_uTmp_P,state_vTmp_P,state_wTmp_P,mu,rho,metric)
 
             # Stage 4
-            state_uTmp_P.ZAXPY(simDt,rhs3.rhs_u,state_u_P.var)
-            state_vTmp_P.ZAXPY(simDt,rhs3.rhs_v,state_v_P.var)
-            state_wTmp_P.ZAXPY(simDt,rhs3.rhs_w,state_w_P.var)
+            state_uTmp_P.ZAXPY(simDt,rhs3.rhs_u,state_u_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
+            state_vTmp_P.ZAXPY(simDt,rhs3.rhs_v,state_v_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
+            state_wTmp_P.ZAXPY(simDt,rhs3.rhs_w,state_w_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
             rhs4.evaluate(state_uTmp_P,state_vTmp_P,state_wTmp_P,mu,rho,metric)
 
             # Update the state
-            state_u_P.var = state_u_P.var + simDt/6.0*( rhs1.rhs_u + 2.0*rhs2.rhs_u + 2.0*rhs3.rhs_u + rhs4.rhs_u )
-            state_v_P.var = state_v_P.var + simDt/6.0*( rhs1.rhs_v + 2.0*rhs2.rhs_v + 2.0*rhs3.rhs_v + rhs4.rhs_v )
-            state_w_P.var = state_w_P.var + simDt/6.0*( rhs1.rhs_w + 2.0*rhs2.rhs_w + 2.0*rhs3.rhs_w + rhs4.rhs_w )
+            state_u_P.update( state_u_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1]
+                              + simDt/6.0*( rhs1.rhs_u + 2.0*rhs2.rhs_u + 2.0*rhs3.rhs_u + rhs4.rhs_u ) )
+            state_v_P.update( state_v_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1]
+                              + simDt/6.0*( rhs1.rhs_v + 2.0*rhs2.rhs_v + 2.0*rhs3.rhs_v + rhs4.rhs_v ) )
+            state_w_P.update( state_w_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1]
+                              + simDt/6.0*( rhs1.rhs_w + 2.0*rhs2.rhs_w + 2.0*rhs3.rhs_w + rhs4.rhs_w ) )
             
 
         
@@ -425,115 +454,66 @@ for iterations in range(1):
         #   conservation needs to be enforced in open systems before
         #   solving Poisson equation, e.g., by rescaling source_P.
 
-        # Divergence of the predicted velocity
-        metric.div_vel(state_u_P,state_v_P,state_w_P,source_P)
-
-        # Integral of the Poisson eqn RHS
-        int_RP = torch.sum(source_P)
-
-        # Poisson equation source term
-        source_P *= rho/simDt*geometry.dx**2
-        
-        #source_P = rho/simDt * (state_u_P.grad_x + state_v_P.grad_y + state_w_P.grad_z)
-        #source_P = rho*geometry.dx*geometry.dx*(state_u_P.grad_x + state_v_P.grad_y + state_w_P.grad_z)
-        
-        # Pressure iteration residual
-        max_res_P = 0.0
-
-        # Matrix equation (3D)
-        DInv  = -1.0/6.0
-        DInvF = -0.2
-        DInvC = -1.0/3.0
-        #DInv  = -geometry.dx**2/6.0 # Centers - uniform grid
-        #DInvF = -geometry.dx**2*0.2 # Faces - uniform grid
-        #DInvC = -geometry.dx**2/3.0 # Corners - uniform grid
-        #EFacX = -1.0/geometry.dx**2
-        #EFacY = -1.0/geometry.dy**2
-        #EFacZ = -1.0/geometry.dz**2
-        #FFacX = -1.0/geometry.dx**2
-        #FFacY = -1.0/geometry.dy**2
-        #FFacZ = -1.0/geometry.dz**2
-        
-        for j in range( Num_pressure_iterations ):
-            # Initial guess is p from previous time step
-            p_OLD_P.copy_(state_p_P.var)#.cuda()
+        if (equationMode=='NS'):
+            # Divergence of the predicted velocity field
+            metric.div_vel(state_u_P,state_v_P,state_w_P,source_P)
             
-            # Interior points
-            state_p_P.var[1:-1,1:-1,1:-1] = ( -p_OLD_P[2:,1:-1,1:-1] - p_OLD_P[:-2,1:-1,1:-1]
-                                              -p_OLD_P[1:-1,2:,1:-1] - p_OLD_P[1:-1,:-2,1:-1]
-                                              -p_OLD_P[1:-1,1:-1,2:] - p_OLD_P[1:-1,1:-1,:-2]
-                                              + source_P[1:-1,1:-1,1:-1] )*DInv
-
-            # Boundary conditions - Neumann zero normal gradient
-            # -x face
-            state_p_P.var[ 0,1:-1,1:-1] = DInvF*( -p_OLD_P[1,1:-1,1:-1]
-                                                  -p_OLD_P[0,2:,1:-1] - p_OLD_P[0,:-2,1:-1]
-                                                  -p_OLD_P[0,1:-1,2:] - p_OLD_P[0,1:-1,:-2]
-                                                  + source_P[0,1:-1,1:-1] )
-            # +x face
-            state_p_P.var[-1,1:-1,1:-1] = DInvF*( -p_OLD_P[-2,1:-1,1:-1]
-                                                  -p_OLD_P[-1,2:,1:-1] - p_OLD_P[-1,:-2,1:-1]
-                                                  -p_OLD_P[-1,1:-1,2:] - p_OLD_P[-1,1:-1,:-2]
-                                                  + source_P[-1,1:-1,1:-1] )
-            # -y face
-            state_p_P.var[1:-1, 0,1:-1] = DInvF*( -p_OLD_P[2:,0,1:-1] - p_OLD_P[:-2,0,1:-1]
-                                                  -p_OLD_P[1:-1,1,1:-1]
-                                                  -p_OLD_P[1:-1,0,2:] - p_OLD_P[1:-1,0,:-2]
-                                                  + source_P[1:-1,0,1:-1] )
-            # +y face
-            state_p_P.var[1:-1,-1,1:-1] = DInvF*( -p_OLD_P[2:,-1,1:-1] - p_OLD_P[:-2,-1,1:-1]
-                                                  -p_OLD_P[1:-1,-2,1:-1]
-                                                  -p_OLD_P[1:-1,-1,2:] - p_OLD_P[1:-1,-1,:-2]
-                                                  + source_P[1:-1,-1,1:-1] )
-            # -z face
-            state_p_P.var[1:-1,1:-1, 0] = DInvF*( -p_OLD_P[2:,1:-1,0] - p_OLD_P[:-2,1:-1,0]
-                                                  -p_OLD_P[1:-1,2:,0] - p_OLD_P[1:-1,:-2,0]
-                                                  -p_OLD_P[1:-1,1:-1,1]
-                                                  + source_P[1:-1,1:-1,0] )
-            # +z face
-            state_p_P.var[1:-1,1:-1,-1] = DInvF*( -p_OLD_P[2:,1:-1,-1] - p_OLD_P[:-2,1:-1,-1]
-                                                  -p_OLD_P[1:-1,2:,-1] - p_OLD_P[1:-1,:-2,-1]
-                                                  -p_OLD_P[1:-1,1:-1,-2]
-                                                  + source_P[1:-1,1:-1,-1] )
-            # corner 1: 0,0,0
-            state_p_P.var[0,0,0] = DInvC*( -p_OLD_P[1,0,0] - p_OLD_P[0,1,0] - p_OLD_P[0,0,1]
-                                           + source_P[0,0,0] )
-            # corner 2: -1,0,0
-            state_p_P.var[-1,0,0] = DInvC*( -p_OLD_P[-2,0,0] - p_OLD_P[-1,1,0] - p_OLD_P[-1,0,1]
-                                            + source_P[-1,0,0] )
-            # corner 3: 0,-1,0
-            state_p_P.var[0,-1,0] = DInvC*( -p_OLD_P[1,-1,0] - p_OLD_P[0,-2,0] - p_OLD_P[0,-1,1]
-                                            + source_P[0,-1,0] )
-            # corner 4: -1,-1,0
-            state_p_P.var[-1,-1,0] = DInvC*( -p_OLD_P[-2,-1,0] - p_OLD_P[-1,-2,0] - p_OLD_P[-1,-1,1]
-                                             + source_P[-1,-1,0] )
+            # Integral of the Poisson eqn RHS
+            int_RP = torch.sum(source_P)
             
-            # corner 5: 0,0,-1
-            state_p_P.var[0,0,-1] = DInvC*( -p_OLD_P[1,0,-1] - p_OLD_P[0,1,-1] - p_OLD_P[0,0,-2]
-                                            + source_P[0,0,-1] )
-            # corner 6: -1,0,-1
-            state_p_P.var[-1,0,-1] = DInvC*( -p_OLD_P[-2,0,-1] - p_OLD_P[-1,1,-1] - p_OLD_P[-1,0,-2]
-                                             + source_P[-1,0,-1] )
-            # corner 7: 0,-1,-1
-            state_p_P.var[0,-1,-1] = DInvC*( -p_OLD_P[1,-1,-1] - p_OLD_P[0,-2,-1] - p_OLD_P[0,-1,-2]
-                                             + source_P[0,-1,-1] )
-            # corner 8: -1,-1,-1
-            state_p_P.var[-1,-1,-1] = DInvC*( -p_OLD_P[-2,-1,-1] - p_OLD_P[-1,-2,-1] - p_OLD_P[-1,-1,-2]
-                                              + source_P[-1,-1,-1] )
+            # Poisson equation source term
+            source_P *= rho/simDt*geometry.dx**2
             
-        # Compute max pressure residual
-        max_res_P = torch.max(torch.abs(state_p_P.var - p_OLD_P))
+            #source_P = rho/simDt * (state_u_P.grad_x + state_v_P.grad_y + state_w_P.grad_z)
+            #source_P = rho*geometry.dx*geometry.dx*(state_u_P.grad_x + state_v_P.grad_y + state_w_P.grad_z)
+            
+            # Pressure iteration residual
+            max_res_P = 0.0
+            
+            # Matrix equation (3D)
+            DInv  = -1.0/6.0
+            DInvF = -0.2
+            DInvC = -1.0/3.0
+            #DInv  = -geometry.dx**2/6.0 # Centers - uniform grid
+            #DInvF = -geometry.dx**2*0.2 # Faces - uniform grid
+            #DInvC = -geometry.dx**2/3.0 # Corners - uniform grid
+            #EFacX = -1.0/geometry.dx**2
+            #EFacY = -1.0/geometry.dy**2
+            #EFacZ = -1.0/geometry.dz**2
+            #FFacX = -1.0/geometry.dx**2
+            #FFacY = -1.0/geometry.dy**2
+            #FFacZ = -1.0/geometry.dz**2
+        
+            for j in range( Num_pressure_iterations ):
+                # Initial guess is p from previous time step
+                state_pOld_P.update(state_p_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
 
-        # Compute pressure gradients
-        metric.grad_p(state_p_P)
+                # Compute gradient of the old pressure field (can just copy and save)
+                metric.grad_P(state_pOld_P)
+            
+                # Update the state
+                state_p_P.update(( - state_pOld_P.grad_x[1:,:-1,:-1] - state_pOld_P.grad_x[:-1,:-1,:-1]
+                                   - state_pOld_P.grad_y[:-1,1:,:-1] - state_pOld_P.grad_y[:-1,:-1,:-1]
+                                   - state_pOld_P.grad_z[:-1,:-1,1:] - state_pOld_P.grad_z[:-1,:-1,:-1]
+                                   + source_P )*DInv)
+                
+            # Compute max pressure residual
+            max_res_P = torch.max(torch.abs(state_p_P.var - state_pOld_P.var))
+
+            # Compute pressure gradients
+            metric.grad_P(state_p_P)
 
         
-        # ----------------------------------------------------
-        # Velocity correction step
-        # ----------------------------------------------------
-        state_u_P.var = state_u_P.var - state_p_P.grad_x/rho*simDt
-        state_v_P.var = state_v_P.var - state_p_P.grad_y/rho*simDt
-        state_w_P.var = state_w_P.var - state_p_P.grad_z/rho*simDt
+            # ----------------------------------------------------
+            # Velocity correction step
+            # ----------------------------------------------------
+            state_u_P.vel_corr(state_p_P.grad_x,simDt/rho)
+            state_v_P.vel_corr(state_p_P.grad_y,simDt/rho)
+            state_w_P.vel_corr(state_p_P.grad_z,simDt/rho)
+                           
+            #state_u_P.var = state_u_P.var - state_p_P.grad_x/rho*simDt
+            #state_v_P.var = state_v_P.var - state_p_P.grad_y/rho*simDt
+            #state_w_P.var = state_w_P.var - state_p_P.grad_z/rho*simDt
 
         
         # ----------------------------------------------------
@@ -550,13 +530,19 @@ for iterations in range(1):
         simTime += simDt
         
         # Write stats
-        lineStr = "  {:10d}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{: 10.6E}\t{: 10.6E}"
-        print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW,int_RP,max_res_P))
+        if (equationMode=='NS'):
+            lineStr = "  {:10d}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{: 10.6E}\t{: 10.6E}"
+            print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW,int_RP,max_res_P))
+        else:
+            lineStr = "  {:10d}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}"
+            print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW))
 
         # Update the figures
-        #dr.plotData(state_u_P.var[:,:,int(Nz/2)].cpu().numpy(),"state_U_"+str(itCount))
-        #dr.plotData(state_v_P.var[:,:,int(Nz/2)].cpu().numpy(),"state_V_"+str(itCount))
-        #dr.plotData(state_w_P.var[:,:,int(Nz/2)].cpu().numpy(),"state_W_"+str(itCount))
+        if (np.mod(itCount,numItOut)==0 and plotState):
+            dr.plotData(state_u_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_U_"+str(itCount))
+            dr.plotData(state_v_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_V_"+str(itCount))
+            dr.plotData(state_w_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_W_"+str(itCount))
+            dr.plotData(state_p_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_p_"+str(itCount))
 
         ## END OF ITERATION LOOP
 

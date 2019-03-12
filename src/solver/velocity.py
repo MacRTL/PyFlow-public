@@ -31,32 +31,51 @@
 
 import numpy as np
 import torch
+import sys
+
+# Load PyFlow modules
+sys.path.append("../data")
+import state
 
 # ----------------------------------------------------
 # Scalar advection-diffusion equation RHS
 # ----------------------------------------------------
 class rhs_scalar:
-    def __init__(self,IC_zeros):
+    def __init__(self,geo,uConv,vConv,wConv):
+        # Default precision
+        prec = geo.prec
+
+        # Data sizes
+        nx_ = geo.nx_
+        ny_ = geo.ny_
+        nz_ = geo.nz_
+        
+        IC_ones_np = np.ones( (nx_,ny_,nz_) )
+        self.state_uConv = state.data_P(geo,uConv*IC_ones_np)
+        self.state_vConv = state.data_P(geo,vConv*IC_ones_np)
+        self.state_wConv = state.data_P(geo,wConv*IC_ones_np)
+        del IC_ones_np
+        
         # Allocate rhs array
         if (torch.cuda.is_available()):
-            self.rhs_u = torch.FloatTensor(IC_zeros).cuda()
-            self.rhs_v = torch.FloatTensor(IC_zeros).cuda()
-            self.rhs_w = torch.FloatTensor(IC_zeros).cuda()
-            self.FX    = torch.FloatTensor(IC_zeros).cuda()
-            self.FY    = torch.FloatTensor(IC_zeros).cuda()
-            self.FZ    = torch.FloatTensor(IC_zeros).cuda()
+            self.rhs_u = torch.zeros(nx_,ny_,nz_,dtype=prec).cuda()
+            self.rhs_v = torch.zeros(nx_,ny_,nz_,dtype=prec).cuda()
+            self.rhs_w = torch.zeros(nx_,ny_,nz_,dtype=prec).cuda()
+            self.FX    = torch.zeros(nx_+1,ny_,nz_,dtype=prec).cuda()
+            self.FY    = torch.zeros(nx_,ny_+1,nz_,dtype=prec).cuda()
+            self.FZ    = torch.zeros(nx_,ny_,nz_+1,dtype=prec).cuda()
         else:
-            self.rhs_u = torch.FloatTensor(IC_zeros)
-            self.rhs_v = torch.FloatTensor(IC_zeros)
-            self.rhs_w = torch.FloatTensor(IC_zeros)
-            self.FX    = torch.FloatTensor(IC_zeros)
-            self.FY    = torch.FloatTensor(IC_zeros)
-            self.FZ    = torch.FloatTensor(IC_zeros)
+            self.rhs_u = torch.zeros(nx_,ny_,nz_,dtype=prec)
+            self.rhs_v = torch.zeros(nx_,ny_,nz_,dtype=prec)
+            self.rhs_w = torch.zeros(nx_,ny_,nz_,dtype=prec)
+            self.FX    = torch.zeros(nx_+1,ny_,nz_,dtype=prec)
+            self.FY    = torch.zeros(nx_,ny_+1,nz_,dtype=prec)
+            self.FZ    = torch.zeros(nx_,ny_,nz_+1,dtype=prec)
 
             
     # ----------------------------------------------------
     # Evaluate the RHS
-    def evaluate(self,state_u,state_v,state_w,uConv,vConv,wConv,mu,rho,metric):
+    def evaluate(self,state_u,state_v,state_w,mu,rho,metric):
         # Zero the rhs
         self.rhs_u.zero_()
         self.rhs_v.zero_()
@@ -89,42 +108,42 @@ class rhs_scalar:
         # Scalar advective fluxes
         # xx
         metric.interp_u_xm(state_u)
-        metric.interp_u_xm(uConv)
-        metric.vel_conv_xx(state_u,uConv,self.rhs_u)
+        metric.interp_u_xm(self.state_uConv)
+        metric.vel_conv_xx(state_u,self.state_uConv,self.rhs_u)
         # xy
         metric.interp_uw_y(state_u)
-        metric.interp_vw_x(vConv)
-        metric.vel_conv_y(state_u,vConv,self.rhs_u)
+        metric.interp_vw_x(self.state_vConv)
+        metric.vel_conv_y(state_u,self.state_vConv,self.rhs_u)
         # xz
         metric.interp_uv_z(state_u)
-        metric.interp_vw_x(wConv)
-        metric.vel_conv_z(state_u,wConv,self.rhs_u)
+        metric.interp_vw_x(self.state_wConv)
+        metric.vel_conv_z(state_u,self.state_wConv,self.rhs_u)
         
         # yx
         metric.interp_vw_x(state_v)
-        metric.interp_uw_y(uConv)
-        metric.vel_conv_x(state_v,uConv,self.rhs_v)
+        metric.interp_uw_y(self.state_uConv)
+        metric.vel_conv_x(state_v,self.state_uConv,self.rhs_v)
         # yy
         metric.interp_v_ym(state_v)
-        metric.interp_v_ym(vConv)
-        metric.vel_conv_yy(state_v,vConv,self.rhs_v)
+        metric.interp_v_ym(self.state_vConv)
+        metric.vel_conv_yy(state_v,self.state_vConv,self.rhs_v)
         # yz
         metric.interp_uv_z(state_v)
-        metric.interp_uw_y(wConv)
-        metric.vel_conv_z(state_v,wConv,self.rhs_v)
+        metric.interp_uw_y(self.state_wConv)
+        metric.vel_conv_z(state_v,self.state_wConv,self.rhs_v)
         
         # zx
         metric.interp_vw_x(state_w)
-        metric.interp_uv_z(uConv)
-        metric.vel_conv_x(state_w,uConv,self.rhs_w)
+        metric.interp_uv_z(self.state_uConv)
+        metric.vel_conv_x(state_w,self.state_uConv,self.rhs_w)
         # zy
         metric.interp_uw_y(state_w)
-        metric.interp_uv_z(vConv)
-        metric.vel_conv_y(state_w,vConv,self.rhs_w)
+        metric.interp_uv_z(self.state_vConv)
+        metric.vel_conv_y(state_w,self.state_vConv,self.rhs_w)
         # zz
         metric.interp_w_zm(state_w)
-        metric.interp_w_zm(wConv)
-        metric.vel_conv_zz(state_w,wConv,self.rhs_w)
+        metric.interp_w_zm(self.state_wConv)
+        metric.vel_conv_zz(state_w,self.state_wConv,self.rhs_w)
 
 
 
@@ -132,22 +151,30 @@ class rhs_scalar:
 # Navier-Stokes equation RHS for pressure-projection
 # ----------------------------------------------------
 class rhs_NavierStokes:
-    def __init__(self,IC_zeros):
+    def __init__(self,geo):
+        # Default precision
+        prec = geo.prec
+
+        # Data sizes
+        nx_ = geo.nx_
+        ny_ = geo.ny_
+        nz_ = geo.nz_
+        
         # Allocate rhs array
         if (torch.cuda.is_available()):
-            self.rhs_u = torch.FloatTensor(IC_zeros).cuda()
-            self.rhs_v = torch.FloatTensor(IC_zeros).cuda()
-            self.rhs_w = torch.FloatTensor(IC_zeros).cuda()
-            self.FX    = torch.FloatTensor(IC_zeros).cuda()
-            self.FY    = torch.FloatTensor(IC_zeros).cuda()
-            self.FZ    = torch.FloatTensor(IC_zeros).cuda()
+            self.rhs_u = torch.zeros(nx_,ny_,nz_,dtype=prec).cuda()
+            self.rhs_v = torch.zeros(nx_,ny_,nz_,dtype=prec).cuda()
+            self.rhs_w = torch.zeros(nx_,ny_,nz_,dtype=prec).cuda()
+            self.FX    = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec).cuda()
+            self.FY    = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec).cuda()
+            self.FZ    = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec).cuda()
         else:
-            self.rhs_u = torch.FloatTensor(IC_zeros)
-            self.rhs_v = torch.FloatTensor(IC_zeros)
-            self.rhs_w = torch.FloatTensor(IC_zeros)
-            self.FX    = torch.FloatTensor(IC_zeros)
-            self.FY    = torch.FloatTensor(IC_zeros)
-            self.FZ    = torch.FloatTensor(IC_zeros)
+            self.rhs_u = torch.zeros(nx_,ny_,nz_,dtype=prec)
+            self.rhs_v = torch.zeros(nx_,ny_,nz_,dtype=prec)
+            self.rhs_w = torch.zeros(nx_,ny_,nz_,dtype=prec)
+            self.FX    = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec)
+            self.FY    = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec)
+            self.FZ    = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec)
 
             
     # ----------------------------------------------------
@@ -201,7 +228,6 @@ class rhs_NavierStokes:
         metric.vel_conv_x(state_v,state_u,self.rhs_v)
         # yy
         metric.interp_v_ym(state_v)
-        metric.interp_v_ym(state_v)
         metric.vel_conv_yy(state_v,state_v,self.rhs_v)
         # yz
         metric.interp_uv_z(state_v)
@@ -217,7 +243,6 @@ class rhs_NavierStokes:
         metric.interp_uv_z(state_v)
         metric.vel_conv_y(state_w,state_v,self.rhs_w)
         # zz
-        metric.interp_w_zm(state_w)
         metric.interp_w_zm(state_w)
         metric.vel_conv_zz(state_w,state_w,self.rhs_w)
 
