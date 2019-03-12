@@ -210,19 +210,19 @@ class metric_uniform:
     # -------------------------------------------------
     # Divergence of the velocity field at cell centers
     def div_vel(self,state_u,state_v,state_w,divg):
-        imin_ = self.imin_; imax_ = self.imax_+1
-        jmin_ = self.jmin_; jmax_ = self.jmax_+1
-        kmin_ = self.kmin_; kmax_ = self.kmax_+1
+        imin_ = self.imin_; imax_ = self.imax_
+        jmin_ = self.jmin_; jmax_ = self.jmax_
+        kmin_ = self.kmin_; kmax_ = self.kmax_
         
         # Zero the divergence
         divg.zero_()
         
-        divg += ( state_u.var[imin_+1:imax_+1,jmin_:jmax_,kmin_:kmax_] -
-                  state_u.var[imin_  :imax_  ,jmin_:jmax_,kmin_:kmax_] )*self.grad_x
-        divg += ( state_u.var[imin_:imax_,jmin_+1:jmax_+1,kmin_:kmax_] -
-                  state_u.var[imin_:imax_,jmin_  :jmax_  ,kmin_:kmax_] )*self.grad_y
-        divg += ( state_u.var[imin_:imax_,jmin_:jmax_,kmin_+1:kmax_+1] -
-                  state_u.var[imin_:imax_,jmin_:jmax_,kmin_  :kmax_  ] )*self.grad_z
+        divg += ( state_u.var[imin_+1:imax_+2,jmin_:jmax_+1,kmin_:kmax_+1] -
+                  state_u.var[imin_  :imax_+1,jmin_:jmax_+1,kmin_:kmax_+1] )*self.grad_x
+        divg += ( state_v.var[imin_:imax_+1,jmin_+1:jmax_+2,kmin_:kmax_+1] -
+                  state_v.var[imin_:imax_+1,jmin_  :jmax_+1,kmin_:kmax_+1] )*self.grad_y
+        divg += ( state_w.var[imin_:imax_+1,jmin_:jmax_+1,kmin_+1:kmax_+2] -
+                  state_w.var[imin_:imax_+1,jmin_:jmax_+1,kmin_  :kmax_+1] )*self.grad_z
 
 
     # -------------------------------------------------

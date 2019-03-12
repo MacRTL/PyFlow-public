@@ -76,29 +76,29 @@ import sfsmodel_smagorinsky
 # Simulation geometry
 #   Options: restart, periodicGaussian, uniform, notAchannel
 #configName = "restart"
-configName = "periodicGaussian"
+#configName = "periodicGaussian"
 #configName = "uniform"
-#configName = "notAchannel"
-configNx   = 256
-configNy   = 256
-configNz   = 256
-configLx   = 1.0
-configLy   = 1.0
-configLz   = 1.0
-#configLx   = 0.008
-#configLy   = 0.008
-#configLz   = 0.008
+configName = "notAchannel"
+configNx   = 128
+configNy   = 64
+configNz   = 128
+#configLx   = 1.0
+#configLy   = 1.0
+#configLz   = 1.0
+configLx   = 0.008
+configLy   = 0.004
+configLz   = 0.008
 
 # Restart and target files to read
 if (configName=='restart'):
     restartFileStr = '../../examples/filtered_vol_dnsbox_1024_Lx0.045_NR_00000020_coarse'
 
 # Model constants
-mu  = 0.0 #1.8678e-5
+mu  = 1.8678e-5
 rho = 1.2
 
 # Time step
-simDt    = 2.5e-3 #5e-6
+simDt    = 2.5e-6
 numIt    = 200
 numItOut = 10
 stopTime = numIt*simDt
@@ -110,10 +110,10 @@ SFSModel = False
 #   Options: Euler, RK4
 solverName   = "RK4"
 genericOrder = 2
-Num_pressure_iterations = 0
-equationMode = "scalar"
+Num_pressure_iterations = 500
+equationMode = "NS"
 plotState    = True
-precision    = torch.float64
+precision    = torch.float32
 
 # Comparison options
 useTargetData = False
@@ -184,7 +184,7 @@ elif (configName=='notAchannel'):
     uMax = 2.0
     vMax = 0.0
     wMax = 0.0
-    amp  = 0.0
+    amp  = 0.01
     print("Bulk Re={:7f}".format(rho*uMax*configLy/mu))
     parabolaX = ( 6.0*(yGrid[np.newaxis,:-1,np.newaxis] + 0.5*configLy)
                   *(0.5*configLy - yGrid[np.newaxis,:-1,np.newaxis])
@@ -488,14 +488,25 @@ for iterations in range(1):
                 # Initial guess is p from previous time step
                 state_pOld_P.update(state_p_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
 
+                # [JFM] update this to the Laplacian operator
+                #  --> Needed for more general solution than Jacobi iteration
+                #
                 # Compute gradient of the old pressure field (can just copy and save)
-                metric.grad_P(state_pOld_P)
-            
+                #metric.grad_P(state_pOld_P)
                 # Update the state
-                state_p_P.update(( - state_pOld_P.grad_x[1:,:-1,:-1] - state_pOld_P.grad_x[:-1,:-1,:-1]
-                                   - state_pOld_P.grad_y[:-1,1:,:-1] - state_pOld_P.grad_y[:-1,:-1,:-1]
-                                   - state_pOld_P.grad_z[:-1,:-1,1:] - state_pOld_P.grad_z[:-1,:-1,:-1]
-                                   + source_P )*DInv)
+                #state_p_P.update(( -state_pOld_P.grad_x[1:,:-1,:-1] - state_pOld_P.grad_x[:-1,:-1,:-1]
+                #                   -state_pOld_P.grad_y[:-1,1:,:-1] - state_pOld_P.grad_y[:-1,:-1,:-1]
+                #                   -state_pOld_P.grad_z[:-1,:-1,1:] - state_pOld_P.grad_z[:-1,:-1,:-1]
+                #                   +source_P )*DInv)
+            
+                # Jacobi iteration
+                state_p_P.update(( -state_pOld_P.var[imin_+1:imax_+2,jmin_:jmax_+1,kmin_:kmax_+1]
+                                   -state_pOld_P.var[imin_-1:imax_  ,jmin_:jmax_+1,kmin_:kmax_+1]
+                                   -state_pOld_P.var[imin_:imax_+1,jmin_+1:jmax_+2,kmin_:kmax_+1]
+                                   -state_pOld_P.var[imin_:imax_+1,jmin_-1:jmax_  ,kmin_:kmax_+1]
+                                   -state_pOld_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_+1:kmax_+2]
+                                   -state_pOld_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_-1:kmax_  ]
+                                   +source_P )*DInv)
                 
             # Compute max pressure residual
             max_res_P = torch.max(torch.abs(state_p_P.var - state_pOld_P.var))
