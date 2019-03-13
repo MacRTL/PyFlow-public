@@ -126,7 +126,7 @@ class solver_bicgstab_serial:
         N = self.nx_*self.ny_*self.nz_
         diagonals = [ -0.5*(geo.dx**2 + geo.dy**2 + geo.dz**2) ]
         offsets   = [0]
-        self.diag = diags(diagonals, offsets, shape=(N,N))
+        self.diag = diags(diagonals, offsets, shape=(N,N), dtype=np.float32)
 
         # Default tolerance
         self.tol = 1e-5

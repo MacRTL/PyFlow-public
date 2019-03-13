@@ -110,7 +110,7 @@ rho = 1.2
 
 # Time step info
 simDt        = 2.5e-6
-numIt        = 10
+numIt        = 500
 startTime    = 0.0
 
 # SFS model
@@ -123,10 +123,10 @@ solverName   = "RK4"
 equationMode = "NS"
 genericOrder = 2
 precision    = torch.float32
-pSolverMode  = "Jacobi"
-Num_pressure_iterations = 800
-#pSolverMode  = "bicgstab"
-#Num_pressure_iterations = 300
+#pSolverMode  = "Jacobi"
+#Num_pressure_iterations = 800
+pSolverMode  = "bicgstab"
+Num_pressure_iterations = 300
 
 # Output options
 plotState    = True
