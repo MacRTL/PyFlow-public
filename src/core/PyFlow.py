@@ -82,31 +82,35 @@ configName = "restart"
 #configLy   = 1.0
 #configLz   = 1.0
 #configName = "notAchannel"
-configNx   = 256
-configNy   = 128
-configNz   = 256
-configLx   = 0.008
-configLy   = 0.004
-configLz   = 0.008
+#configNx   = 256
+#configNy   = 128
+#configNz   = 256
+#configLx   = 0.008
+#configLy   = 0.004
+#configLz   = 0.008
 
-# Restart and target files to read
+# Data and config files to read
 if (configName=='restart'):
     #dataFileStr = '../../examples/filtered_vol_dnsbox_1024_Lx0.045_NR_00000020_coarse'
     #dataFileType = 'volume'
     
     configFileStr = '../../examples/config_dnsbox_128_Lx0.0056'
     dataFileStr   = '../../examples/data_dnsbox_128_Lx0.0056.1_2.50000E-04'
+    #dataFileStr   = 'data_dnsbox_128_Lx0.0056.PF_0'
     dataFileType  = 'restart'
+
+# Data file to write
+fNameOut     = 'data_dnsbox_128_Lx0.0056.PF'
+numItDataOut = 10
 
 # Model constants
 mu  = 1.8678e-5
 rho = 1.2
 
-# Time step
-simDt    = 2.5e-6
-numIt    = 50
-numItOut = 2
-startTime= 0.0
+# Time step info
+simDt        = 2.5e-6
+numIt        = 50
+startTime    = 0.0
 
 # SFS model
 SFSModel = False
@@ -117,9 +121,12 @@ SFSModel = False
 solverName   = "RK4"
 equationMode = "NS"
 genericOrder = 2
-plotState    = True
 precision    = torch.float32
 Num_pressure_iterations = 500
+
+# Output options
+plotState    = True
+numItPlotOut = 2
 
 # Comparison options
 useTargetData = False
@@ -131,6 +138,10 @@ if (useTargetData):
 # ----------------------------------------------------
 # Configure initial conditions
 # ----------------------------------------------------
+# Default state variable names
+names = ['U','V','W','P']
+
+# Process initial condition type
 if (configName=='restart'):
     if (dataFileType=='restart'):
         # Read grid data from an NGA config file
@@ -298,17 +309,22 @@ model_name = 'LES_model_NR_March2019'
 # ----------------------------------------------------
 
 # Allocate state data using PyTorch variables
-state_u_P = state.data_P(geometry,IC_u_np)
-state_v_P = state.data_P(geometry,IC_v_np)
-state_w_P = state.data_P(geometry,IC_w_np)
-state_p_P = state.data_P(geometry,IC_p_np)
-state_pOld_P = state.data_P(geometry,IC_p_np)
+state_u_P = state.state_P(geometry,IC_u_np)
+state_v_P = state.state_P(geometry,IC_v_np)
+state_w_P = state.state_P(geometry,IC_w_np)
+state_p_P = state.state_P(geometry,IC_p_np)
+state_pOld_P = state.state_P(geometry,IC_p_np)
+
+# Set up a Numpy mirror to the PyTorch state
+#  --> Used for file I/O
+state_data_all = (state_u_P, state_v_P, state_w_P, state_p_P)
+data_all_CPU   = state.data_all_CPU(geometry,startTime,simDt,names,state_data_all)
 
 # Need a temporary velocity state for RK solvers
 if (solverName[:-1]=="RK"):
-    state_uTmp_P = state.data_P(geometry,IC_u_np)
-    state_vTmp_P = state.data_P(geometry,IC_v_np)
-    state_wTmp_P = state.data_P(geometry,IC_w_np)
+    state_uTmp_P = state.state_P(geometry,IC_u_np)
+    state_vTmp_P = state.state_P(geometry,IC_v_np)
+    state_wTmp_P = state.state_P(geometry,IC_w_np)
 
 # Allocate workspace arrays
 Closure_u_P = torch.FloatTensor( IC_zeros_np ).to(device)
@@ -374,6 +390,9 @@ for iterations in range(1):
     else:
         headStr = "  {:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}"
         print(headStr.format("Step","Time","max CFL","max U","max V","max W"))
+
+    # Write the initial data file
+    dr.writeNGArestart(fNameOut+'_'+str(itCount),data_all_CPU,False)
     
     # Write initial condition stats
     maxU = torch.max(state_u_P.var)
@@ -571,8 +590,14 @@ for iterations in range(1):
             lineStr = "  {:10d}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}"
             print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW))
 
-        # Update the figures
-        if (np.mod(itCount,numItOut)==0 and plotState):
+        # Write output
+        if (np.mod(itCount,numItDataOut)==0):
+            # Write data to disk
+            data_all_CPU.time = simTime
+            data_all_CPU.dt   = simDt
+            dr.writeNGArestart(fNameOut+'_'+str(itCount),data_all_CPU,False)
+
+        if (plotState and np.mod(itCount,numItPlotOut)==0):
             dr.plotData(state_u_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_U_"+str(itCount))
             dr.plotData(state_v_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_V_"+str(itCount))
             dr.plotData(state_w_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_W_"+str(itCount))

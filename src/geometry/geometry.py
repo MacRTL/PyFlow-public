@@ -50,6 +50,9 @@ class uniform:
         self.Nx = len(xGrid)-1
         self.Ny = len(yGrid)-1
         self.Nz = len(zGrid)-1
+        self.nx = self.Nx
+        self.ny = self.Ny
+        self.nz = self.Nz
 
         self.Lx = xGrid[-1]-xGrid[0]
         self.Ly = yGrid[-1]-yGrid[0]
@@ -59,13 +62,32 @@ class uniform:
         self.dy = self.Ly/float(self.Ny); self.dyi = 1.0/self.dy
         self.dz = self.Lz/float(self.Nz); self.dzi = 1.0/self.dz
 
+        # Overlap size
+        self.nover = 2
+
+        # Global sizes
+        self.nxo  = self.Nx+2*self.nover
+        self.nyo  = self.Ny+2*self.nover
+        self.nzo  = self.Nz+2*self.nover
+        self.imino = 0
+        self.jmino = 0
+        self.kmino = 0
+        self.imaxo = self.imino+self.nxo-1
+        self.jmaxo = self.jmino+self.nyo-1
+        self.kmaxo = self.kmino+self.nzo-1
+        self.imin  = self.imino+self.nover
+        self.jmin  = self.jmino+self.nover
+        self.kmin  = self.kmino+self.nover
+        self.imax  = self.imin+self.nx-1
+        self.jmax  = self.jmin+self.ny-1
+        self.kmax  = self.kmin+self.nz-1
+
         # Local grid sizes - MPI decomp goes here
         self.nx_ = self.Nx
         self.ny_ = self.Ny
         self.nz_ = self.Nz
 
         # Local overlap cells for 2CD staggered schemes
-        self.nover = 2
         self.nxo_  = self.nx_+2*self.nover
         self.nyo_  = self.ny_+2*self.nover
         self.nzo_  = self.nz_+2*self.nover

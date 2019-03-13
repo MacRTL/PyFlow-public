@@ -172,6 +172,44 @@ def readNGArestart(fName,readData=True):
             return(names)
 
 
+
+# --------------------------------------------------------
+# Write the grid and data to a RESTART format data file
+#    Serial operations only; useful for writing the header
+#    for files of all sizes and data for small files
+# --------------------------------------------------------
+def writeNGArestart(fName,Data,headerOnly=True):
+
+    with open(fName, 'wb') as f:
+        # Write data sizes
+        f.write(struct.pack('<i',Data.nx))
+        f.write(struct.pack('<i',Data.ny))
+        f.write(struct.pack('<i',Data.nz))
+        f.write(struct.pack('<i',Data.nvar))
+
+        # Write timestep size and simulation time
+        f.write(struct.pack('<d',Data.dt))
+        f.write(struct.pack('<d',Data.time))
+
+        # Write names of the variables in the file
+        for name in Data.names:
+            outNameStr = name.ljust(8)
+            for s in outNameStr:
+                f.write(struct.pack("c",s.encode('UTF-8')))
+
+        if (not headerOnly):
+            # Write the data arrays
+            #  --> NOTE: assumes "Data" is an instance of class state.data_all_CPU
+            for ivar in range(Data.nvar):
+                outData = arr.array('d',Data.data[ivar].reshape(Data.nx*Data.ny*Data.nz,order='F'))
+                outData.tofile(f)
+                #print('   --> Wrote {}'.format(Data.names[ivar]))
+
+            print('  --> Wrote data file')
+
+    return
+
+
 # --------------------------------------------------------
 # Read the grid and data from a VOLUME format data file
 # --------------------------------------------------------

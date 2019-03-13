@@ -33,9 +33,42 @@ import numpy as np
 import torch
 
 # ----------------------------------------------------
+# CPU container for all state data
+# ----------------------------------------------------
+class data_all_CPU:
+    def __init__(self,geo,time,dt,names,state_data_all):
+
+        # Global sizes
+        self.nx = geo.Nx
+        self.ny = geo.Ny
+        self.nz = geo.Nz
+
+        # Time info
+        self.time = time
+        self.dt   = dt
+
+        # Variables
+        self.names = names
+        self.nvar  = len(names)
+
+        # Sanity check
+        if (len(state_data_all) != self.nvar):
+            print("ERROR: inconsistent state data")
+
+        # State data
+        self.data = []
+        imin_ = geo.imin_; imax_ = geo.imax_+1
+        jmin_ = geo.jmin_; jmax_ = geo.jmax_+1
+        kmin_ = geo.kmin_; kmax_ = geo.kmax_+1
+        for state in state_data_all:
+            self.data.append(state.var[imin_:imax_,jmin_:jmax_,kmin_:kmax_]
+                             .to(torch.device('cpu')).numpy())
+
+
+# ----------------------------------------------------
 # Base class for state data
 # ----------------------------------------------------
-class data_P:
+class state_P:
     def __init__(self,geo,IC=None):
         # Defaults: zero initial conditions
 
