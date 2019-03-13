@@ -175,13 +175,25 @@ class metric_uniform:
         imin_ = self.imin_; imax_ = self.imax_+1
         jmin_ = self.jmin_; jmax_ = self.jmax_+1
         kmin_ = self.kmin_; kmax_ = self.kmax_+1
+
+        state.grad_x.copy_( state.var[imin_  :imax_+1,jmin_:jmax_+1,kmin_:kmax_+1] )
+        state.grad_x.sub_ ( state.var[imin_-1:imax_  ,jmin_:jmax_+1,kmin_:kmax_+1] )
+        state.grad_x.mul_ ( self.grad_x )
+
+        state.grad_y.copy_( state.var[imin_:imax_+1,jmin_  :jmax_+1,kmin_:kmax_+1] )
+        state.grad_y.sub_ ( state.var[imin_:imax_+1,jmin_-1:jmax_  ,kmin_:kmax_+1] )
+        state.grad_y.mul_ ( self.grad_y )
+
+        state.grad_z.copy_( state.var[imin_:imax_+1,jmin_:jmax_+1,kmin_  :kmax_+1] )
+        state.grad_z.sub_ ( state.var[imin_:imax_+1,jmin_:jmax_+1,kmin_-1:kmax_  ] )
+        state.grad_z.mul_ ( self.grad_z )
         
-        state.grad_x = self.grad_x*( state.var[imin_  :imax_+1,jmin_:jmax_+1,kmin_:kmax_+1] -
-                                     state.var[imin_-1:imax_  ,jmin_:jmax_+1,kmin_:kmax_+1] )
-        state.grad_y = self.grad_y*( state.var[imin_:imax_+1,jmin_  :jmax_+1,kmin_:kmax_+1] -
-                                     state.var[imin_:imax_+1,jmin_-1:jmax_  ,kmin_:kmax_+1] )
-        state.grad_z = self.grad_z*( state.var[imin_:imax_+1,jmin_:jmax_+1,kmin_  :kmax_+1] -
-                                     state.var[imin_:imax_+1,jmin_:jmax_+1,kmin_-1:kmax_  ] )
+        #state.grad_x = self.grad_x*( state.var[imin_  :imax_+1,jmin_:jmax_+1,kmin_:kmax_+1] -
+        #                             state.var[imin_-1:imax_  ,jmin_:jmax_+1,kmin_:kmax_+1] )
+        #state.grad_y = self.grad_y*( state.var[imin_:imax_+1,jmin_  :jmax_+1,kmin_:kmax_+1] -
+        #                             state.var[imin_:imax_+1,jmin_-1:jmax_  ,kmin_:kmax_+1] )
+        #state.grad_z = self.grad_z*( state.var[imin_:imax_+1,jmin_:jmax_+1,kmin_  :kmax_+1] -
+        #                             state.var[imin_:imax_+1,jmin_:jmax_+1,kmin_-1:kmax_  ] )
 
 
     # ------------------------------------------------------------
@@ -190,21 +202,36 @@ class metric_uniform:
         imin_ = self.imin_; imax_ = self.imax_+1
         jmin_ = self.jmin_; jmax_ = self.jmax_+1
         kmin_ = self.kmin_; kmax_ = self.kmax_+1
+
+        state.grad_x.copy_( state.var[imin_  :imax_+1,jmin_:jmax_+1,kmin_:kmax_+1] )
+        state.grad_x.sub_ ( state.var[imin_-1:imax_  ,jmin_:jmax_+1,kmin_:kmax_+1] )
+        state.grad_x.mul_ ( self.grad_x )
+
+        state.grad_y.copy_( state.var[imin_:imax_+1,jmin_  :jmax_+1,kmin_:kmax_+1] )
+        state.grad_y.sub_ ( state.var[imin_:imax_+1,jmin_-1:jmax_  ,kmin_:kmax_+1] )
+        state.grad_y.mul_ ( self.grad_y )
+
+        state.grad_z.copy_( state.var[imin_:imax_+1,jmin_:jmax_+1,kmin_  :kmax_+1] )
+        state.grad_z.sub_ ( state.var[imin_:imax_+1,jmin_:jmax_+1,kmin_-1:kmax_  ] )
+        state.grad_z.mul_ ( self.grad_z )
         
-        state.grad_x = self.grad_x*( state.var[imin_  :imax_+1,jmin_:jmax_+1,kmin_:kmax_+1] -
-                                     state.var[imin_-1:imax_  ,jmin_:jmax_+1,kmin_:kmax_+1] )
-        state.grad_y = self.grad_y*( state.var[imin_:imax_+1,jmin_  :jmax_+1,kmin_:kmax_+1] -
-                                     state.var[imin_:imax_+1,jmin_-1:jmax_  ,kmin_:kmax_+1] )
-        state.grad_z = self.grad_z*( state.var[imin_:imax_+1,jmin_:jmax_+1,kmin_  :kmax_+1] -
-                                     state.var[imin_:imax_+1,jmin_:jmax_+1,kmin_-1:kmax_  ] )
+        #state.grad_x = self.grad_x*( state.var[imin_  :imax_+1,jmin_:jmax_+1,kmin_:kmax_+1] -
+        #                             state.var[imin_-1:imax_  ,jmin_:jmax_+1,kmin_:kmax_+1] )
+        #state.grad_y = self.grad_y*( state.var[imin_:imax_+1,jmin_  :jmax_+1,kmin_:kmax_+1] -
+        #                             state.var[imin_:imax_+1,jmin_-1:jmax_  ,kmin_:kmax_+1] )
+        #state.grad_z = self.grad_z*( state.var[imin_:imax_+1,jmin_:jmax_+1,kmin_  :kmax_+1] -
+        #                             state.var[imin_:imax_+1,jmin_:jmax_+1,kmin_-1:kmax_  ] )
 
 
     # -------------------------------------------------
     # Divergence of the viscous fluxes
     def div_visc(self,FX,FY,FZ,rhs):
-        rhs += ( FX[1:,:-1,:-1] - FX[:-1,:-1,:-1] )*self.div_x
-        rhs += ( FY[:-1,1:,:-1] - FY[:-1,:-1,:-1] )*self.div_y
-        rhs += ( FZ[:-1,:-1,1:] - FZ[:-1,:-1,:-1] )*self.div_z
+        rhs.add_( self.div_x, FX[1: ,:-1,:-1] )
+        rhs.sub_( self.div_x, FX[:-1,:-1,:-1] )
+        rhs.add_( self.div_y, FY[:-1,1: ,:-1] )
+        rhs.sub_( self.div_y, FY[:-1,:-1,:-1] )
+        rhs.add_( self.div_z, FZ[:-1,:-1,1: ] )
+        rhs.sub_( self.div_z, FZ[:-1,:-1,:-1] )
 
         
     # -------------------------------------------------
@@ -217,8 +244,10 @@ class metric_uniform:
         # Zero the divergence
         divg.zero_()
         
-        divg += ( state_u.var[imin_+1:imax_+2,jmin_:jmax_+1,kmin_:kmax_+1] -
-                  state_u.var[imin_  :imax_+1,jmin_:jmax_+1,kmin_:kmax_+1] )*self.grad_x
+        divg.add_( state_u.var[imin_+1:imax_+2,jmin_:jmax_+1,kmin_:kmax_+1] )
+        divg.sub_( state_u.var[imin_  :imax_+1,jmin_:jmax_+1,kmin_:kmax_+1] )
+        divg.mul_( self.grad_x )
+                  
         divg += ( state_v.var[imin_:imax_+1,jmin_+1:jmax_+2,kmin_:kmax_+1] -
                   state_v.var[imin_:imax_+1,jmin_  :jmax_+1,kmin_:kmax_+1] )*self.grad_y
         divg += ( state_w.var[imin_:imax_+1,jmin_:jmax_+1,kmin_+1:kmax_+2] -

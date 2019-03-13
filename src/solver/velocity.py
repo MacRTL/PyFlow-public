@@ -185,6 +185,9 @@ class rhs_NavierStokes:
         self.rhs_v.zero_()
         self.rhs_w.zero_()
         
+        #print(self.FX.device)
+        #print(state_u.grad_x.device)
+
         # Compute velocity gradients for the viscous flux
         metric.grad_vel_visc(state_u)
         metric.grad_vel_visc(state_v)
@@ -192,21 +195,44 @@ class rhs_NavierStokes:
         
         # Viscous fluxes
         # x
-        self.FX = 2.0*mu/rho * state_u.grad_x
-        self.FY = mu/rho * (state_u.grad_y + state_v.grad_x)
-        self.FZ = mu/rho * (state_u.grad_z + state_w.grad_x)
+        #print(self.FX.device)
+        #print(state_u.grad_x.device)
+        self.FX.copy_( state_u.grad_x )
+        self.FX.mul_ ( 2.0*mu/rho )
+        self.FY.copy_( state_u.grad_y )
+        self.FY.add_ ( state_v.grad_x )
+        self.FY.mul_ ( mu/rho )
+        self.FZ.copy_( state_u.grad_z )
+        self.FZ.add_ ( state_w.grad_x )
+        self.FZ.mul_ ( mu/rho )
         metric.div_visc(self.FX,self.FY,self.FZ,self.rhs_u)
         
         # y
-        self.FX = mu/rho * (state_v.grad_x + state_u.grad_y)
-        self.FY = 2.0*mu/rho * state_v.grad_y
-        self.FZ = mu/rho * (state_v.grad_z + state_w.grad_y)
+        self.FX.copy_( state_v.grad_x )
+        self.FX.add_ ( state_u.grad_y )
+        self.FX.mul_ ( mu/rho )
+        self.FY.copy_( state_v.grad_y )
+        self.FY.mul_ ( 2.0*mu/rho )
+        self.FZ.copy_( state_v.grad_z )
+        self.FZ.add_ ( state_w.grad_y )
+        self.FZ.mul_ ( mu/rho )
+        #self.FX = mu/rho * (state_v.grad_x + state_u.grad_y)
+        #self.FY = 2.0*mu/rho * state_v.grad_y
+        #self.FZ = mu/rho * (state_v.grad_z + state_w.grad_y)
         metric.div_visc(self.FX,self.FY,self.FZ,self.rhs_v)
         
         # z
-        self.FX = mu/rho * (state_w.grad_x + state_u.grad_z)
-        self.FY = mu/rho * (state_w.grad_y + state_v.grad_z)
-        self.FZ = 2.0*mu/rho * state_w.grad_z
+        self.FX.copy_( state_w.grad_x )
+        self.FX.add_ ( state_u.grad_z )
+        self.FX.mul_ ( mu/rho )
+        self.FY.copy_( state_w.grad_y )
+        self.FY.add_ ( state_v.grad_z )
+        self.FY.mul_ ( mu/rho )
+        self.FZ.copy_( state_w.grad_z )
+        self.FZ.mul_ ( 2.0*mu/rho )
+        #self.FX = mu/rho * (state_w.grad_x + state_u.grad_z)
+        #self.FY = mu/rho * (state_w.grad_y + state_v.grad_z)
+        #self.FZ = 2.0*mu/rho * state_w.grad_z
         metric.div_visc(self.FX,self.FY,self.FZ,self.rhs_w)
         
         # Advective fluxes

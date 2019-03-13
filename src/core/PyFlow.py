@@ -45,7 +45,7 @@ import os
 # Load PyFlow modules
 sys.path.append("../data")
 import state
-import dataReader as dr
+#import dataReader as dr
 import constants as const
 #
 sys.path.append("../geometry")
@@ -78,13 +78,13 @@ import sfsmodel_smagorinsky
 #configName = "restart"
 #configName = "periodicGaussian"
 #configName = "uniform"
-configName = "notAchannel"
-configNx   = 128
-configNy   = 64
-configNz   = 128
 #configLx   = 1.0
 #configLy   = 1.0
 #configLz   = 1.0
+configName = "notAchannel"
+configNx   = 256
+configNy   = 128
+configNz   = 256
 configLx   = 0.008
 configLy   = 0.004
 configLz   = 0.008
@@ -99,7 +99,7 @@ rho = 1.2
 
 # Time step
 simDt    = 2.5e-6
-numIt    = 200
+numIt    = 500
 numItOut = 10
 stopTime = numIt*simDt
 
@@ -112,7 +112,7 @@ solverName   = "RK4"
 genericOrder = 2
 Num_pressure_iterations = 500
 equationMode = "NS"
-plotState    = True
+plotState    = False
 precision    = torch.float32
 
 # Comparison options
@@ -120,7 +120,7 @@ useTargetData = False
 if (useTargetData):
     targetFileStr  = restartFileStr
 
-torch.set_num_threads(2)
+
 
 # ----------------------------------------------------
 # Configure simulation

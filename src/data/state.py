@@ -130,7 +130,7 @@ class data_P:
         # Subtract inGrad*inScalar
         self.var[self.imin_:self.imax_+1,
                  self.jmin_:self.jmax_+1,
-                 self.kmin_:self.kmax_+1].sub_(inGrad[:-1,:-1,:-1]*inScalar)
+                 self.kmin_:self.kmax_+1].sub_(inScalar, inGrad[:-1,:-1,:-1])
         
         # Update the overlap cells
         self.update_border()
