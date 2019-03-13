@@ -56,6 +56,7 @@ import metric_staggered
 #
 sys.path.append("../solver")
 import velocity
+import pressure
 #
 sys.path.append("../sfsmodel")
 import sfsmodel_nn
@@ -96,12 +97,12 @@ if (configName=='restart'):
     
     configFileStr = '../../examples/config_dnsbox_128_Lx0.0056'
     dataFileStr   = '../../examples/data_dnsbox_128_Lx0.0056.1_2.50000E-04'
-    #dataFileStr   = 'data_dnsbox_128_Lx0.0056.PF_0'
+    #dataFileStr   = 'data_dnsbox_128_Lx0.0056.PF_40'
     dataFileType  = 'restart'
 
 # Data file to write
 fNameOut     = 'data_dnsbox_128_Lx0.0056.PF'
-numItDataOut = 10
+numItDataOut = 20
 
 # Model constants
 mu  = 1.8678e-5
@@ -109,7 +110,7 @@ rho = 1.2
 
 # Time step info
 simDt        = 2.5e-6
-numIt        = 50
+numIt        = 10
 startTime    = 0.0
 
 # SFS model
@@ -122,7 +123,10 @@ solverName   = "RK4"
 equationMode = "NS"
 genericOrder = 2
 precision    = torch.float32
-Num_pressure_iterations = 500
+pSolverMode  = "Jacobi"
+Num_pressure_iterations = 800
+#pSolverMode  = "bicgstab"
+#Num_pressure_iterations = 300
 
 # Output options
 plotState    = True
@@ -342,13 +346,23 @@ if (equationMode=='scalar'):
         rhs2 = velocity.rhs_scalar(geometry,uMax,vMax,wMax)
         rhs3 = velocity.rhs_scalar(geometry,uMax,vMax,wMax)
         rhs4 = velocity.rhs_scalar(geometry,uMax,vMax,wMax)
+        
 elif (equationMode=='NS'):
     print("Solving Navier-Stokes equations")
+    print("Solver settings: advancer={}, pressure={}".format(solverName,pSolverMode))
+    
     rhs1 = velocity.rhs_NavierStokes(geometry)
     if (solverName[:-1]=="RK"):
         rhs2 = velocity.rhs_NavierStokes(geometry)
         rhs3 = velocity.rhs_NavierStokes(geometry)
         rhs4 = velocity.rhs_NavierStokes(geometry)
+        
+    # Pressure solver
+    if (pSolverMode=='Jacobi'):
+        poisson = pressure.solver_jacobi(geometry,rho,simDt,Num_pressure_iterations)
+    elif (pSolverMode=='bicgstab'):
+        poisson = pressure.solver_bicgstab_serial(geometry,metric,rho,simDt,Num_pressure_iterations)
+        
 else:
     print("Equation setting not recognized; consequences unknown...")
     
@@ -392,7 +406,8 @@ for iterations in range(1):
         print(headStr.format("Step","Time","max CFL","max U","max V","max W"))
 
     # Write the initial data file
-    dr.writeNGArestart(fNameOut+'_'+str(itCount),data_all_CPU,False)
+    timeStr = "{:12.7E}".format(simTime)
+    dr.writeNGArestart(fNameOut+'_'+timeStr,data_all_CPU,False)
     
     # Write initial condition stats
     maxU = torch.max(state_u_P.var)
@@ -403,11 +418,12 @@ for iterations in range(1):
     print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW))
 
     if (plotState):
+        timeStr = "{:12.7E}".format(simTime)
         # Plot the initial state
-        dr.plotData(state_u_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_U_"+str(itCount))
-        dr.plotData(state_v_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_V_"+str(itCount))
-        dr.plotData(state_w_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_W_"+str(itCount))
-        dr.plotData(state_p_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_p_"+str(itCount))
+        dr.plotData(state_u_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_U_"+str(itCount)+"_"+timeStr)
+        dr.plotData(state_v_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_V_"+str(itCount)+"_"+timeStr)
+        dr.plotData(state_w_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_W_"+str(itCount)+"_"+timeStr)
+        dr.plotData(state_p_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_p_"+str(itCount)+"_"+timeStr)
 
     # Compute the initial energy
     initEnergy = torch.sum(state_u_P.var**2 + state_v_P.var**2 + state_w_P.var**2)
@@ -483,8 +499,6 @@ for iterations in range(1):
         # ----------------------------------------------------
         # Pressure Poisson equation
         # ----------------------------------------------------
-
-        # [JFM] move this to its own module
         
         # 1. Currently using Chorin's original fractional step method
         #   (essentially Lie splitting); unclear interpretation of
@@ -502,64 +516,22 @@ for iterations in range(1):
             
             # Integral of the Poisson eqn RHS
             int_RP = torch.sum(source_P)
-            
-            # Poisson equation source term
-            source_P *= rho/simDt*geometry.dx**2
-            
-            #source_P = rho/simDt * (state_u_P.grad_x + state_v_P.grad_y + state_w_P.grad_z)
-            #source_P = rho*geometry.dx*geometry.dx*(state_u_P.grad_x + state_v_P.grad_y + state_w_P.grad_z)
-            
-            # Pressure iteration residual
-            max_res_P = 0.0
-            
-            # Matrix equation (3D)
-            DInv  = -1.0/6.0
-            DInvF = -0.2
-            DInvC = -1.0/3.0
-            #DInv  = -geometry.dx**2/6.0 # Centers - uniform grid
-            #DInvF = -geometry.dx**2*0.2 # Faces - uniform grid
-            #DInvC = -geometry.dx**2/3.0 # Corners - uniform grid
-            #EFacX = -1.0/geometry.dx**2
-            #EFacY = -1.0/geometry.dy**2
-            #EFacZ = -1.0/geometry.dz**2
-            #FFacX = -1.0/geometry.dx**2
-            #FFacY = -1.0/geometry.dy**2
-            #FFacZ = -1.0/geometry.dz**2
-        
-            for j in range( Num_pressure_iterations ):
-                # Initial guess is p from previous time step
-                state_pOld_P.update(state_p_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
 
-                # [JFM] update this to the Laplacian operator
-                #  --> Needed for more general solution than Jacobi iteration
-                #
-                # Compute gradient of the old pressure field (can just copy and save)
-                #metric.grad_P(state_pOld_P)
-                # Update the state
-                #state_p_P.update(( -state_pOld_P.grad_x[1:,:-1,:-1] - state_pOld_P.grad_x[:-1,:-1,:-1]
-                #                   -state_pOld_P.grad_y[:-1,1:,:-1] - state_pOld_P.grad_y[:-1,:-1,:-1]
-                #                   -state_pOld_P.grad_z[:-1,:-1,1:] - state_pOld_P.grad_z[:-1,:-1,:-1]
-                #                   +source_P )*DInv)
-            
-                # Jacobi iteration
-                state_p_P.update(( -state_pOld_P.var[imin_+1:imax_+2,jmin_:jmax_+1,kmin_:kmax_+1]
-                                   -state_pOld_P.var[imin_-1:imax_  ,jmin_:jmax_+1,kmin_:kmax_+1]
-                                   -state_pOld_P.var[imin_:imax_+1,jmin_+1:jmax_+2,kmin_:kmax_+1]
-                                   -state_pOld_P.var[imin_:imax_+1,jmin_-1:jmax_  ,kmin_:kmax_+1]
-                                   -state_pOld_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_+1:kmax_+2]
-                                   -state_pOld_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_-1:kmax_  ]
-                                   +source_P )*DInv)
+            # Solve the Poisson equation
+            poisson.solve(state_pOld_P,state_p_P,source_P)
                 
-            # Compute max pressure residual
+            # Max pressure residual
             max_res_P = torch.max(torch.abs(state_p_P.var - state_pOld_P.var))
-
-            # Compute pressure gradients
-            metric.grad_P(state_p_P)
 
         
             # ----------------------------------------------------
             # Velocity correction step
             # ----------------------------------------------------
+
+            # Compute pressure gradients
+            metric.grad_P(state_p_P)
+
+            # Update the velocity correction
             state_u_P.vel_corr(state_p_P.grad_x,simDt/rho)
             state_v_P.vel_corr(state_p_P.grad_y,simDt/rho)
             state_w_P.vel_corr(state_p_P.grad_z,simDt/rho)
@@ -595,13 +567,15 @@ for iterations in range(1):
             # Write data to disk
             data_all_CPU.time = simTime
             data_all_CPU.dt   = simDt
-            dr.writeNGArestart(fNameOut+'_'+str(itCount),data_all_CPU,False)
+            timeStr = "{:12.7E}".format(simTime)
+            dr.writeNGArestart(fNameOut+'_'+timeStr,data_all_CPU,False)
 
         if (plotState and np.mod(itCount,numItPlotOut)==0):
-            dr.plotData(state_u_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_U_"+str(itCount))
-            dr.plotData(state_v_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_V_"+str(itCount))
-            dr.plotData(state_w_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_W_"+str(itCount))
-            dr.plotData(state_p_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_p_"+str(itCount))
+            timeStr = "{:12.7E}".format(simTime)
+            dr.plotData(state_u_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_U_"+str(itCount)+"_"+timeStr)
+            dr.plotData(state_v_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_V_"+str(itCount)+"_"+timeStr)
+            dr.plotData(state_w_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_W_"+str(itCount)+"_"+timeStr)
+            dr.plotData(state_p_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_p_"+str(itCount)+"_"+timeStr)
 
         ## END OF ITERATION LOOP
 
@@ -612,7 +586,14 @@ for iterations in range(1):
     # ----------------------------------------------------
     # Post-simulation tasks
     # ----------------------------------------------------
-        #Diff = state_u_P.var - Variable( torch.FloatTensor( np.matrix( u_DNS_downsamples[T_factor*(i+1)]).T ) )
+    
+    # Write the final state to disk
+    data_all_CPU.time = simTime
+    data_all_CPU.dt   = simDt
+    timeStr = "{:12.7E}".format(simTime)
+    dr.writeNGArestart(fNameOut+'_'+timeStr,data_all_CPU,False)
+            
+    #Diff = state_u_P.var - Variable( torch.FloatTensor( np.matrix( u_DNS_downsamples[T_factor*(i+1)]).T ) )
     if (useTargetData):
         Diff = state_u_P.var - target_P
         Loss_i = torch.mean( torch.abs( Diff ) )
@@ -637,7 +618,8 @@ for iterations in range(1):
 
     if (plotState):
         # Print a pretty picture
-        dr.plotData(state_u_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_U_"+str(itCount))
-        dr.plotData(state_v_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_V_"+str(itCount))
-        dr.plotData(state_w_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_W_"+str(itCount))
-        dr.plotData(state_p_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_p_"+str(itCount))
+        timeStr = "{:12.7E}".format(simTime)
+        dr.plotData(state_u_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_U_"+str(itCount)+"_"+timeStr)
+        dr.plotData(state_v_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_V_"+str(itCount)+"_"+timeStr)
+        dr.plotData(state_w_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_W_"+str(itCount)+"_"+timeStr)
+        dr.plotData(state_p_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_p_"+str(itCount)+"_"+timeStr)

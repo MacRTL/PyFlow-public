@@ -30,6 +30,7 @@
 # ------------------------------------------------------------------------
 
 import numpy as np
+from scipy.sparse import diags
 
 # ------------------------------------------------------
 # Staggered central-difference schemes for UNIFORM grids
@@ -38,12 +39,15 @@ class metric_uniform:
     def __init__(self,geo):
 
         # Local data sizes and indices
-        nxo_ = geo.nxo_
-        nyo_ = geo.nyo_
-        nzo_ = geo.nzo_
+        nx_ = geo.nx_
+        ny_ = geo.ny_
+        nz_ = geo.nz_
         self.imin_  = geo.imin_;  self.imax_ = geo.imax_
         self.jmin_  = geo.jmin_;  self.jmax_ = geo.jmax_
         self.kmin_  = geo.kmin_;  self.kmax_ = geo.kmax_
+        nxo_ = geo.nxo_
+        nyo_ = geo.nyo_
+        nzo_ = geo.nzo_
         self.imino_ = geo.imino_; self.imaxo_= geo.imaxo_
         self.jmino_ = geo.jmino_; self.jmaxo_= geo.jmaxo_
         self.kmino_ = geo.kmino_; self.kmaxo_= geo.kmaxo_
@@ -66,6 +70,20 @@ class metric_uniform:
             self.interp_xm = 0.5
             self.interp_ym = 0.5
             self.interp_zm = 0.5
+
+            # Laplace operator
+            N = nx_*ny_*nz_
+            dxi = geo.dxi; dyi = geo.dyi; dzi = geo.dzi
+            # i,j,k; i-1,j,k; i+1,j,k; i,j-1,k; i,j+1,k; i,j,k-1; i,j,k+1
+            diagonals = [ -2*dxi*dxi - 2*dyi*dyi - 2*dzi*dzi,
+                          dxi*dxi, dxi*dxi,
+                          dyi*dyi, dyi*dyi,
+                          dzi*dzi, dzi*dzi ]
+            offsets = [0, -nx_*ny_, nx_*ny_, -nx_, nx_, -1, +1]
+            self.Laplace = diags(diagonals, offsets, shape=(N,N))
+
+            # MPI: update Laplace operator border
+            
         else:
             print("grid type not implemented")
 
