@@ -56,21 +56,13 @@ class rhs_scalar:
         self.state_wConv = state.data_P(geo,wConv*IC_ones_np)
         del IC_ones_np
         
-        # Allocate rhs array
-        if (torch.cuda.is_available()):
-            self.rhs_u = torch.zeros(nx_,ny_,nz_,dtype=prec).cuda()
-            self.rhs_v = torch.zeros(nx_,ny_,nz_,dtype=prec).cuda()
-            self.rhs_w = torch.zeros(nx_,ny_,nz_,dtype=prec).cuda()
-            self.FX    = torch.zeros(nx_+1,ny_,nz_,dtype=prec).cuda()
-            self.FY    = torch.zeros(nx_,ny_+1,nz_,dtype=prec).cuda()
-            self.FZ    = torch.zeros(nx_,ny_,nz_+1,dtype=prec).cuda()
-        else:
-            self.rhs_u = torch.zeros(nx_,ny_,nz_,dtype=prec)
-            self.rhs_v = torch.zeros(nx_,ny_,nz_,dtype=prec)
-            self.rhs_w = torch.zeros(nx_,ny_,nz_,dtype=prec)
-            self.FX    = torch.zeros(nx_+1,ny_,nz_,dtype=prec)
-            self.FY    = torch.zeros(nx_,ny_+1,nz_,dtype=prec)
-            self.FZ    = torch.zeros(nx_,ny_,nz_+1,dtype=prec)
+        # Allocate rhs arrays
+        self.rhs_u = torch.zeros(nx_,ny_,nz_,dtype=prec).to(geo.device)
+        self.rhs_v = torch.zeros(nx_,ny_,nz_,dtype=prec).to(geo.device)
+        self.rhs_w = torch.zeros(nx_,ny_,nz_,dtype=prec).to(geo.device)
+        self.FX    = torch.zeros(nx_+1,ny_,nz_,dtype=prec).to(geo.device)
+        self.FY    = torch.zeros(nx_,ny_+1,nz_,dtype=prec).to(geo.device)
+        self.FZ    = torch.zeros(nx_,ny_,nz_+1,dtype=prec).to(geo.device)
 
             
     # ----------------------------------------------------
@@ -160,21 +152,13 @@ class rhs_NavierStokes:
         ny_ = geo.ny_
         nz_ = geo.nz_
         
-        # Allocate rhs array
-        if (torch.cuda.is_available()):
-            self.rhs_u = torch.zeros(nx_,ny_,nz_,dtype=prec).cuda()
-            self.rhs_v = torch.zeros(nx_,ny_,nz_,dtype=prec).cuda()
-            self.rhs_w = torch.zeros(nx_,ny_,nz_,dtype=prec).cuda()
-            self.FX    = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec).cuda()
-            self.FY    = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec).cuda()
-            self.FZ    = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec).cuda()
-        else:
-            self.rhs_u = torch.zeros(nx_,ny_,nz_,dtype=prec)
-            self.rhs_v = torch.zeros(nx_,ny_,nz_,dtype=prec)
-            self.rhs_w = torch.zeros(nx_,ny_,nz_,dtype=prec)
-            self.FX    = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec)
-            self.FY    = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec)
-            self.FZ    = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec)
+        # Allocate rhs arrays
+        self.rhs_u = torch.zeros(nx_,ny_,nz_,dtype=prec).to(geo.device)
+        self.rhs_v = torch.zeros(nx_,ny_,nz_,dtype=prec).to(geo.device)
+        self.rhs_w = torch.zeros(nx_,ny_,nz_,dtype=prec).to(geo.device)
+        self.FX    = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec).to(geo.device)
+        self.FY    = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec).to(geo.device)
+        self.FZ    = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec).to(geo.device)
 
             
     # ----------------------------------------------------

@@ -55,62 +55,121 @@ def plotData(data,fName):
 
 
 # --------------------------------------------------------
+# Read grid data from an NGA config file
+# --------------------------------------------------------    
+def readNGAconfig(fName):
+
+    with open(fName, 'rb') as f:
+        # Read the geometry name
+        strLen = 64
+        f_Data = f.read(strLen)
+        nameStr = struct.unpack(strLen*"c",f_Data)
+        configName = ''
+        for s in nameStr:
+            if (s.isspace())==False:
+                configName += s.decode('UTF-8')
+                    
+        # Read data sizes
+        f_Data = f.read(28)
+        icyl   = struct.unpack('<i',f_Data[ 0: 4])[0]
+        xper   = struct.unpack('<i',f_Data[ 4: 8])[0]
+        yper   = struct.unpack('<i',f_Data[ 8:12])[0]
+        zper   = struct.unpack('<i',f_Data[12:16])[0]
+        nx     = struct.unpack('<i',f_Data[16:20])[0]
+        ny     = struct.unpack('<i',f_Data[20:24])[0]
+        nz     = struct.unpack('<i',f_Data[24:28])[0]
+        
+        # Read the grid field
+        xGrid = arr.array('d')
+        xGrid.fromfile(f, nx+1)
+        
+        yGrid = arr.array('d')
+        yGrid.fromfile(f, ny+1)
+        
+        zGrid = arr.array('d')
+        zGrid.fromfile(f, nz+1)
+
+        # Read the mask - NOT IMPLEMENTED
+        
+        # Print some file info
+        if (True):
+            print(' ')
+            print(' --> Importing grid data from NGA config file')
+            print('   Config file name:   {}'.format(fName))
+            print('   Configuration name: {}'.format(configName))
+            print('   Cylindrical:        {}'.format(icyl))
+            print('   xper,yper,zper:     {},{},{}'.format(xper,yper,zper))
+            print('   Grid size:         nx={}, ny={}, nz={}'.format(nx,ny,nz))
+            print('       xmin, xmax:    {}, {}'.format(min(xGrid),max(xGrid)))
+            print('       ymin, ymax:    {}, {}'.format(min(yGrid),max(yGrid)))
+            print('       zmin, zmax:    {}, {}'.format(min(zGrid),max(zGrid)))
+
+        # Return the grid data info
+        xGridOut = np.frombuffer(xGrid,dtype='f8')
+        yGridOut = np.frombuffer(yGrid,dtype='f8')
+        zGridOut = np.frombuffer(zGrid,dtype='f8')
+        
+        return(xGridOut,yGridOut,zGridOut,xper,yper,zper)
+    
+
+
+# --------------------------------------------------------
 # Read state data from a RESTART format data file
 # --------------------------------------------------------    
 def readNGArestart(fName,readData=True):
 
-    f = open(fName, 'rb')
-    
-    # Read data sizes
-    f_Data = f.read(16)
-    nx     = struct.unpack('<i',f_Data[ 0: 4])[0]
-    ny     = struct.unpack('<i',f_Data[ 4: 8])[0]
-    nz     = struct.unpack('<i',f_Data[ 8:12])[0]
-    nvar   = struct.unpack('<i',f_Data[12:16])[0]
-    
-    # Read timestep size and simulation time
-    f_Data = f.read(16)
-    dt     = struct.unpack('<d',f_Data[0:8])[0]
-    time   = struct.unpack('<d',f_Data[8:16])[0]
-    
-    # Read names of the variables in the file
-    f_Data = f.read(8*nvar)
-    names  = ['']*nvar
-    for ivar in range(nvar):
-        nameStr = struct.unpack("cccccccc",f_Data[ivar*8:(ivar+1)*8])
-        for s in nameStr:
-            if (s.isspace())==False:
-                names[ivar] += s.decode('UTF-8')
+    with open(fName, 'rb') as f:
+        # Read data sizes
+        f_Data = f.read(16)
+        nx     = struct.unpack('<i',f_Data[ 0: 4])[0]
+        ny     = struct.unpack('<i',f_Data[ 4: 8])[0]
+        nz     = struct.unpack('<i',f_Data[ 8:12])[0]
+        nvar   = struct.unpack('<i',f_Data[12:16])[0]
         
-    # Print some file info
-    if (True):
-        print(' ')
-        print(fName)
-        print('   Data file at time: {}'.format(time))
-        print('   Timestep size:     {}'.format(dt))
-        print('   Number of vars:    {}'.format(nvar))
-        print('   Variables in file: {}'.format(names))
-
-    if readData:
-        # Read data arrays in serial and return the output
-        nread = nvar
-        #nread = min([31,nvar])
-        data   = np.empty([nx,ny,nz,nread])
-        for ivar in range(nread):
-            inData = arr.array('d')
-            inData.fromfile(f, nx*ny*nz)
-            data[:,:,:,ivar] = np.frombuffer(inData,dtype='f8').reshape((nx,ny,nz),order='F')
-            print('   --> Done reading {}'.format(names[ivar]))
+        # Read timestep size and simulation time
+        f_Data = f.read(16)
+        dt     = struct.unpack('<d',f_Data[0:8])[0]
+        time   = struct.unpack('<d',f_Data[8:16])[0]
+        
+        # Read names of the variables in the file
+        f_Data = f.read(8*nvar)
+        names  = ['']*nvar
+        for ivar in range(nvar):
+            nameStr = struct.unpack("cccccccc",f_Data[ivar*8:(ivar+1)*8])
+            for s in nameStr:
+                if (s.isspace())==False:
+                    names[ivar] += s.decode('UTF-8')
+        
+        # Print some file info
+        if (True):
+            print(' ')
+            print(' --> Importing state data from NGA restart file')
+            print('   Data file name:    {}'.format(fName))
+            print('   Data file at time: {:10.4E}'.format(time))
+            print('   Timestep size:     {:10.4E}'.format(dt))
+            print('   Number of vars:    {}'.format(nvar))
+            print('   Variables in file: {}'.format(names))
             
-        #print(data.shape)
-        #plotData(data[:,:,int(nz/2),0],"test")
+        if readData:
+            # Read data arrays in serial and return the output
+            nread = nvar
+            #nread = min([31,nvar])
+            data   = np.empty([nx,ny,nz,nread])
+            for ivar in range(nread):
+                inData = arr.array('d')
+                inData.fromfile(f, nx*ny*nz)
+                data[:,:,:,ivar] = np.frombuffer(inData,dtype='f8').reshape((nx,ny,nz),order='F')
+                print('   --> Done reading {}'.format(names[ivar]))
+            
+            #print(data.shape)
+            #plotData(data[:,:,int(nz/2),0],"test")
 
-        return(names,data)
+            return(names,time,data)
 
-    else:
-        # Just return the grid info and variable names
-        # Need to call readNGA_parallel to get data
-        return(names)
+        else:
+            # Just return the grid info and variable names
+            # Need to call readNGA_parallel to get data
+            return(names)
 
 
 # --------------------------------------------------------
@@ -301,7 +360,7 @@ def readNGA_parallel(fName,data,ivar_read_start=None,nvar_read=None):
         ivar_start = ivar_read_start
         ivar_end   = ivar_read_start+nvar_read
 
-    for ivar in range(ivar_start,ivar_end): #data.nvar):
+    for ivar in range(ivar_start,ivar_end):
         # Set the file view
         var_MOK = ivar
         disp = ( 5*4 + (nx_MOK+ny_MOK+nz_MOK)*WP_MOK + NVARS_MOK*str_MOK + 2*WP_MOK
@@ -385,7 +444,7 @@ def writeNGA_parallel(fName,data,ivar_write_start=None,nvar_write=None):
     # Offset for position in data.data
     ivar_offs = ivar_start
     
-    for ivar in range(ivar_start,ivar_end): #data.nvar):
+    for ivar in range(ivar_start,ivar_end):
         # Set the file view
         var_MOK = ivar
         disp = ( 5*4 + (nx_MOK+ny_MOK+nz_MOK)*WP_MOK + NVARS_MOK*str_MOK + 2*WP_MOK

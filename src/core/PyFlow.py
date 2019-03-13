@@ -45,7 +45,7 @@ import os
 # Load PyFlow modules
 sys.path.append("../data")
 import state
-#import dataReader as dr
+import dataReader as dr
 import constants as const
 #
 sys.path.append("../geometry")
@@ -75,13 +75,13 @@ import sfsmodel_smagorinsky
 
 # Simulation geometry
 #   Options: restart, periodicGaussian, uniform, notAchannel
-#configName = "restart"
+configName = "restart"
 #configName = "periodicGaussian"
 #configName = "uniform"
 #configLx   = 1.0
 #configLy   = 1.0
 #configLz   = 1.0
-configName = "notAchannel"
+#configName = "notAchannel"
 configNx   = 256
 configNy   = 128
 configNz   = 256
@@ -91,7 +91,12 @@ configLz   = 0.008
 
 # Restart and target files to read
 if (configName=='restart'):
-    restartFileStr = '../../examples/filtered_vol_dnsbox_1024_Lx0.045_NR_00000020_coarse'
+    #dataFileStr = '../../examples/filtered_vol_dnsbox_1024_Lx0.045_NR_00000020_coarse'
+    #dataFileType = 'volume'
+    
+    configFileStr = '../../examples/config_dnsbox_128_Lx0.0056'
+    dataFileStr   = '../../examples/data_dnsbox_128_Lx0.0056.1_2.50000E-04'
+    dataFileType  = 'restart'
 
 # Model constants
 mu  = 1.8678e-5
@@ -99,21 +104,22 @@ rho = 1.2
 
 # Time step
 simDt    = 2.5e-6
-numIt    = 500
-numItOut = 10
-stopTime = numIt*simDt
+numIt    = 50
+numItOut = 2
+startTime= 0.0
 
 # SFS model
 SFSModel = False
 
 # Solver settings
-#   Options: Euler, RK4
+#   solverName options:   Euler, RK4
+#   equationMode options: scalar, NS
 solverName   = "RK4"
-genericOrder = 2
-Num_pressure_iterations = 500
 equationMode = "NS"
-plotState    = False
+genericOrder = 2
+plotState    = True
 precision    = torch.float32
+Num_pressure_iterations = 500
 
 # Comparison options
 useTargetData = False
@@ -123,15 +129,30 @@ if (useTargetData):
 
 
 # ----------------------------------------------------
-# Configure simulation
+# Configure initial conditions
 # ----------------------------------------------------
-# Set up the initial state
 if (configName=='restart'):
-    # Read grid and state data from the restart file
-    xGrid,yGrid,zGrid,names,dataTime,data = dr.readNGA(restartFileStr)
-    configNx = len(xGrid)
-    configNy = len(yGrid)
-    configNz = len(zGrid)
+    if (dataFileType=='restart'):
+        # Read grid data from an NGA config file
+        xGrid,yGrid,zGrid,xper,yper,zper = dr.readNGAconfig(configFileStr)
+        configNx = len(xGrid)-1
+        configNy = len(yGrid)-1
+        configNz = len(zGrid)-1
+        
+        # Read state data from an NGA restart file
+        names,startTime,data = dr.readNGArestart(dataFileStr)
+
+    elif (dataFileType=='volume'):
+        # Read grid and state data from a volume-format file
+        xGrid,yGrid,zGrid,names,dataTime,data = dr.readNGA(dataFileStr)
+        configNx = len(xGrid)
+        configNy = len(yGrid)
+        configNz = len(zGrid)
+
+        # Interpolate grid and state data to cell faces
+        # [JFM] NEED TO IMPLEMENT
+
+    # Extract the initial conditions
     data_IC = data[:,:,:,0:4]
     
     # Clean up
@@ -184,7 +205,7 @@ elif (configName=='notAchannel'):
     uMax = 2.0
     vMax = 0.0
     wMax = 0.0
-    amp  = 0.01
+    amp  = 0.4
     print("Bulk Re={:7f}".format(rho*uMax*configLy/mu))
     parabolaX = ( 6.0*(yGrid[np.newaxis,:-1,np.newaxis] + 0.5*configLy)
                   *(0.5*configLy - yGrid[np.newaxis,:-1,np.newaxis])
@@ -199,8 +220,23 @@ elif (configName=='notAchannel'):
     data_IC[:,:,:,3] = 0.0
     del parabolaX
 
+
+
+# ----------------------------------------------------
+# Configure PyTorch
+# ----------------------------------------------------
+
+# Offload to GPUs if available
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
+    
+# ----------------------------------------------------
+# Configure simulation
+# ----------------------------------------------------
+
 # Initialize the geometry
-geometry = geo.uniform(xGrid,yGrid,zGrid,precision)
+#   --> Geometry object also provides parallel decomp/offload settings
+geometry = geo.uniform(xGrid,yGrid,zGrid,device,precision)
 
 # Local grid sizes
 nx_ = geometry.nx_
@@ -213,10 +249,11 @@ kmin_ = geometry.kmin_; kmax_ = geometry.kmax_
 # Initialize the metrics
 metric = metric_staggered.metric_uniform(geometry)
 
-# Set up Torch state
-haveCuda = torch.cuda.is_available()
 
-# Read target data if requested
+
+# ----------------------------------------------------
+# Set up target data state
+# ----------------------------------------------------
 if (useTargetData):
     # Read target data file
     xGrid_t,yGrid_t,zGrid_t,names_t,dataTime_t,data_t = dr.readNGA(targetFileStr)
@@ -226,12 +263,8 @@ if (useTargetData):
     # Clean up
     del data_t
     
-    if (haveCuda):
-        x_max_P = torch.FloatTensor( const.x_max16 ).cuda()
-        target_P = torch.FloatTensor( data_target10 ).cuda()
-    else:
-        x_max_P = torch.FloatTensor( const.x_max16 )
-        target_P = torch.FloatTensor( data_target10 )
+    x_max_P  = torch.FloatTensor( const.x_max16 ).to(device)
+    target_P = torch.FloatTensor( data_target10 ).to(device)
         
     # Clean up
     del data_target10
@@ -247,8 +280,7 @@ IC_w_np = data_IC[:,:,:,2]
 IC_p_np = data_IC[:,:,:,3]
 
 IC_zeros_np = np.zeros( (configNx,configNy,configNz) )
-
-IC_ones_np = np.ones( (configNx,configNy,configNz) )
+IC_ones_np  = np.ones ( (configNx,configNy,configNz) )
 
     
 # ----------------------------------------------------
@@ -258,8 +290,7 @@ IC_ones_np = np.ones( (configNx,configNy,configNz) )
 model = sfsmodel_nn.ClosureModel2()
 model_name = 'LES_model_NR_March2019'
 #model.load_state_dict(torch.load(model_name))
-#if (haveCuda):
-    #model.cuda()
+#model.to(device)
 
 
 # ----------------------------------------------------
@@ -270,8 +301,8 @@ model_name = 'LES_model_NR_March2019'
 state_u_P = state.data_P(geometry,IC_u_np)
 state_v_P = state.data_P(geometry,IC_v_np)
 state_w_P = state.data_P(geometry,IC_w_np)
-state_p_P = state.data_P(geometry,IC_zeros_np)
-state_pOld_P = state.data_P(geometry,IC_zeros_np)
+state_p_P = state.data_P(geometry,IC_p_np)
+state_pOld_P = state.data_P(geometry,IC_p_np)
 
 # Need a temporary velocity state for RK solvers
 if (solverName[:-1]=="RK"):
@@ -280,24 +311,14 @@ if (solverName[:-1]=="RK"):
     state_wTmp_P = state.data_P(geometry,IC_w_np)
 
 # Allocate workspace arrays
-if (haveCuda):
-    Closure_u_P =  torch.FloatTensor( IC_zeros_np ).cuda()
-    Closure_v_P = torch.FloatTensor( IC_zeros_np ).cuda()
-    Closure_w_P = torch.FloatTensor( IC_zeros_np ).cuda()    
-    
-    source_P = torch.zeros(nx_,ny_,nz_,dtype=precision).cuda()
-    #p_OLD_P  = torch.zeros(nx_,ny_,nz_,dtype=precision).cuda()
-    
-else:
-    Closure_u_P =  torch.FloatTensor( IC_zeros_np )
-    Closure_v_P = torch.FloatTensor( IC_zeros_np )
-    Closure_w_P = torch.FloatTensor( IC_zeros_np )    
-    
-    source_P = torch.zeros(nx_,ny_,nz_,dtype=precision)
-    #p_OLD_P  = torch.zeros(nx_,ny_,nz_,dtype=precision)
+Closure_u_P = torch.FloatTensor( IC_zeros_np ).to(device)
+Closure_v_P = torch.FloatTensor( IC_zeros_np ).to(device)
+Closure_w_P = torch.FloatTensor( IC_zeros_np ).to(device)    
+source_P    = torch.zeros(nx_,ny_,nz_,dtype=precision).to(device)
 
 
 # Allocate RHS objects
+print(' ')
 if (equationMode=='scalar'):
     print("Solving scalar advection-diffusion equation")
     rhs1 = velocity.rhs_scalar(geometry,uMax,vMax,wMax)
@@ -319,6 +340,7 @@ else:
 del IC_u_np
 del IC_v_np
 del IC_w_np
+del IC_p_np
 del IC_zeros_np
 del data_IC
 
@@ -341,8 +363,9 @@ for iterations in range(1):
     Loss = 0.0
 
     # Iteration counter and simulation time
-    itCount = 0
-    simTime = 0.0
+    itCount  = 0
+    simTime  = startTime
+    stopTime = startTime + numIt*simDt
 
     # Write the stdout header
     if (equationMode=='NS'):

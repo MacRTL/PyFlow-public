@@ -59,25 +59,14 @@ class data_P:
         self.kmino_ = geo.kmino_; self.kmaxo_ = geo.kmaxo_
         
         # Allocate data arrays
-        if (torch.cuda.is_available()):
-            # State data
-            self.var     = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).cuda()
-            # Interpolated state data
-            self.var_i   = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec).cuda()
-            # First derivatives
-            self.grad_x  = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec).cuda()
-            self.grad_y  = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec).cuda()
-            self.grad_z  = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec).cuda()
-            
-        else:
-            # State data
-            self.var     = torch.zeros(nxo_,nyo_,nzo_,dtype=prec)
-            # Interpolated state data
-            self.var_i   = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec)
-            # First derivatives
-            self.grad_x  = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec)
-            self.grad_y  = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec)
-            self.grad_z  = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec)
+        # State data
+        self.var     = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(geo.device)
+        # Interpolated state data
+        self.var_i   = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec).to(geo.device)
+        # First derivatives
+        self.grad_x  = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec).to(geo.device)
+        self.grad_y  = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec).to(geo.device)
+        self.grad_z  = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec).to(geo.device)
 
         # Copy initial conditions into the data tensor
         if (IC.any()):
