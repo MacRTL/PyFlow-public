@@ -117,7 +117,7 @@ class solver_bicgstab_serial:
         # Solve using the Scipy BiCGStab solver
         xOut,info = sp.bicgstab(self.Laplace,
                                 source_P.to(torch.device('cpu')).numpy().ravel(),
-                                state_pOld_P.var[imin_:imax_,jmin_:jmax_,kmin_:kmax_].numpy().ravel(),
+                                state_pOld_P.var[imin_:imax_,jmin_:jmax_,kmin_:kmax_].to(torch.device('cpu')).numpy().ravel(),
                                 tol=self.tol, maxiter=self.Num_pressure_iterations,
                                 M=self.diag )
                                 #callback=report)
