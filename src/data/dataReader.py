@@ -160,9 +160,6 @@ def readNGArestart(fName,readData=True):
                 inData.fromfile(f, nx*ny*nz)
                 data[:,:,:,ivar] = np.frombuffer(inData,dtype='f8').reshape((nx,ny,nz),order='F')
                 print('   --> Done reading {}'.format(names[ivar]))
-            
-            #print(data.shape)
-            #plotData(data[:,:,int(nz/2),0],"test")
 
             return(names,time,data)
 

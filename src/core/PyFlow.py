@@ -2,7 +2,9 @@
 #
 # PyFlow: A GPU-accelerated CFD platform written in Python
 #
-# @author Justin A. Sirignano
+# @authors:
+#    Justin A. Sirignano
+#    Jonathan F. MacArt
 #
 # The MIT License (MIT)
 # Copyright (c) 2019 University of Illinois Board of Trustees
@@ -34,7 +36,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-#from torchvision import datasets, transforms
 from torch.autograd import Variable
 
 import time
@@ -64,10 +65,11 @@ import sfsmodel_smagorinsky
 
 
 ####### TODO
-#  1. Staggered grid
-#  2. Pressure correction
+#  1. Non-periodic BCs
+#  2. Midpoint fractional-step
 #  3. RK3
-#  4. Krylov
+#  4. Krylov - GPU
+#  5. Non-uniform grid
 
 
 # ----------------------------------------------------
@@ -79,9 +81,6 @@ import sfsmodel_smagorinsky
 configName = "restart"
 #configName = "periodicGaussian"
 #configName = "uniform"
-#configLx   = 1.0
-#configLy   = 1.0
-#configLz   = 1.0
 #configName = "notAchannel"
 #configNx   = 256
 #configNy   = 128
@@ -97,7 +96,6 @@ if (configName=='restart'):
     
     configFileStr = '../../examples/config_dnsbox_128_Lx0.0056'
     dataFileStr   = '../../examples/data_dnsbox_128_Lx0.0056.1_2.50000E-04'
-    #dataFileStr   = 'data_dnsbox_128_Lx0.0056.PF_40'
     dataFileType  = 'restart'
 
 # Data file to write
@@ -110,15 +108,18 @@ rho = 1.2
 
 # Time step info
 simDt        = 2.5e-6
-numIt        = 500
+numIt        = 5
 startTime    = 0.0
 
 # SFS model
-SFSModel = False
+#   SFSModel options: none, Smagorinsky, nn
+SFSModel = 'Smagorinsky'
 
 # Solver settings
 #   solverName options:   Euler, RK4
 #   equationMode options: scalar, NS
+#   pSolverMode options:  Jacobi, bicgstab
+#
 solverName   = "RK4"
 equationMode = "NS"
 genericOrder = 2
@@ -428,8 +429,6 @@ for iterations in range(1):
     # Compute the initial energy
     initEnergy = torch.sum(state_u_P.var**2 + state_v_P.var**2 + state_w_P.var**2)
     
-    #Chorin's projection method for solution of incompressible Navier-Stokes PDE with periodic boundary conditions in a box.
-    
     # Main iteration loop
     while (simTime < stopTime):
 
@@ -443,7 +442,7 @@ for iterations in range(1):
         #model_output2 = model_output.cpu()
 
         # Do we use an SFS model?
-        if (SFSModel):
+        if (SFSModel=='Smagorinsky'):
             Closure_u_P, Closure_v_P, Closure_w_P = sfsmodel_smagorinsky.eval(geometry.dx, state_u_P,state_v_P,state_w_P,
                                                                               Closure_u_P, Closure_v_P, Closure_w_P, metric)
         else:

@@ -59,38 +59,12 @@ class solver_jacobi:
         # Poisson equation source term
         source_P *= self.rho/self.simDt*self.dx**2
         
-        #source_P = rho/simDt * (state_u_P.grad_x + state_v_P.grad_y + state_w_P.grad_z)
-        #source_P = rho*geometry.dx*geometry.dx*(state_u_P.grad_x + state_v_P.grad_y
-        #+ state_w_P.grad_z)
-        
         # Matrix equation (3D)
         DInv  = -1.0/6.0
-        #DInvF = -0.2
-        #DInvC = -1.0/3.0
-        #DInv  = -geometry.dx**2/6.0 # Centers - uniform grid
-        #DInvF = -geometry.dx**2*0.2 # Faces - uniform grid
-        #DInvC = -geometry.dx**2/3.0 # Corners - uniform grid
-        #EFacX = -1.0/geometry.dx**2
-        #EFacY = -1.0/geometry.dy**2
-        #EFacZ = -1.0/geometry.dz**2
-        #FFacX = -1.0/geometry.dx**2
-        #FFacY = -1.0/geometry.dy**2
-        #FFacZ = -1.0/geometry.dz**2
         
         for j in range( self.Num_pressure_iterations ):
             # Initial guess is p from previous time step
             state_pOld_P.update(state_p_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
-            
-            # [JFM] update this to the Laplacian operator
-            #  --> Needed for more general solution than Jacobi iteration
-            #
-            # Compute gradient of the old pressure field (can just copy and save)
-            #metric.grad_P(state_pOld_P)
-            # Update the state
-            #state_p_P.update(( -state_pOld_P.grad_x[1:,:-1,:-1] - state_pOld_P.grad_x[:-1,:-1,:-1]
-            #                   -state_pOld_P.grad_y[:-1,1:,:-1] - state_pOld_P.grad_y[:-1,:-1,:-1]
-            #                   -state_pOld_P.grad_z[:-1,:-1,1:] - state_pOld_P.grad_z[:-1,:-1,:-1]
-            #                   +source_P )*DInv)
             
             # Jacobi iteration
             state_p_P.update(( -state_pOld_P.var[imin_+1:imax_+2,jmin_:jmax_+1,kmin_:kmax_+1]
@@ -101,8 +75,6 @@ class solver_jacobi:
                                -state_pOld_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_-1:kmax_  ]
                                +source_P )*DInv)
             
-
-
 
 class solver_bicgstab_serial:
     def __init__(self,geo,metric,rho,simDt,Num_pressure_iterations):

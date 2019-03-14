@@ -33,7 +33,7 @@ import numpy as np
 from scipy.sparse import diags
 
 # ------------------------------------------------------
-# Staggered central-difference schemes for UNIFORM grids
+# Staggered central-difference schemes for uniform grids
 # ------------------------------------------------------
 class metric_uniform:
     def __init__(self,geo):
@@ -205,13 +205,6 @@ class metric_uniform:
         state.grad_z.copy_( state.var[imin_:imax_+1,jmin_:jmax_+1,kmin_  :kmax_+1] )
         state.grad_z.sub_ ( state.var[imin_:imax_+1,jmin_:jmax_+1,kmin_-1:kmax_  ] )
         state.grad_z.mul_ ( self.grad_z )
-        
-        #state.grad_x = self.grad_x*( state.var[imin_  :imax_+1,jmin_:jmax_+1,kmin_:kmax_+1] -
-        #                             state.var[imin_-1:imax_  ,jmin_:jmax_+1,kmin_:kmax_+1] )
-        #state.grad_y = self.grad_y*( state.var[imin_:imax_+1,jmin_  :jmax_+1,kmin_:kmax_+1] -
-        #                             state.var[imin_:imax_+1,jmin_-1:jmax_  ,kmin_:kmax_+1] )
-        #state.grad_z = self.grad_z*( state.var[imin_:imax_+1,jmin_:jmax_+1,kmin_  :kmax_+1] -
-        #                             state.var[imin_:imax_+1,jmin_:jmax_+1,kmin_-1:kmax_  ] )
 
 
     # ------------------------------------------------------------
@@ -232,13 +225,6 @@ class metric_uniform:
         state.grad_z.copy_( state.var[imin_:imax_+1,jmin_:jmax_+1,kmin_  :kmax_+1] )
         state.grad_z.sub_ ( state.var[imin_:imax_+1,jmin_:jmax_+1,kmin_-1:kmax_  ] )
         state.grad_z.mul_ ( self.grad_z )
-        
-        #state.grad_x = self.grad_x*( state.var[imin_  :imax_+1,jmin_:jmax_+1,kmin_:kmax_+1] -
-        #                             state.var[imin_-1:imax_  ,jmin_:jmax_+1,kmin_:kmax_+1] )
-        #state.grad_y = self.grad_y*( state.var[imin_:imax_+1,jmin_  :jmax_+1,kmin_:kmax_+1] -
-        #                             state.var[imin_:imax_+1,jmin_-1:jmax_  ,kmin_:kmax_+1] )
-        #state.grad_z = self.grad_z*( state.var[imin_:imax_+1,jmin_:jmax_+1,kmin_  :kmax_+1] -
-        #                             state.var[imin_:imax_+1,jmin_:jmax_+1,kmin_-1:kmax_  ] )
 
 
     # -------------------------------------------------
@@ -309,38 +295,3 @@ class metric_uniform:
                     state_u.var_i[:-1,:-1,:-1] * state_w.var_i[:-1,:-1,:-1] )*self.grad_z
 
 
-
-
-
-        
-
-def deprecated():
-    
-
-    # ------------------------------------------------------------
-    # Gradient of velocity to locations needed by the viscous flux
-    def grad_vel_visc(self,state):
-        state.grad_x[1:,:,:] = self.grad_x*(state.var[1:,:,:] - state.var[:-1,:,:])
-        state.grad_y[:,1:,:] = self.grad_y*(state.var[:,1:,:] - state.var[:,:-1,:])
-        state.grad_z[:,:,1:] = self.grad_z*(state.var[:,:,1:] - state.var[:,:,:-1])
-    
-        # Periodic boundary conditions
-        # x
-        state.grad_x[0,:,:] = self.grad_x*(state.var[0,:,:] - state.var[-1,:,:])
-        # y
-        state.grad_y[:,0,:] = self.grad_y*(state.var[:,0,:] - state.var[:,-1,:])
-        # z
-        state.grad_z[:,:,0] = self.grad_z*(state.var[:,:,0] - state.var[:,:,-1])
-
-
-    # -------------------------------------------------
-    # Divergence of the viscous fluxes
-    def div_visc(self,FX,FY,FZ,rhs_u):
-        rhs_u[:-1,:,:] += (FX[1:,:,:] - FX[:-1,:,:])*self.div_x
-        rhs_u[:,:-1,:] += (FY[:,1:,:] - FY[:,:-1,:])*self.div_y
-        rhs_u[:,:,:-1] += (FZ[:,:,1:] - FZ[:,:,:-1])*self.div_z
-    
-        # Periodic boundary conditions
-        rhs_u[-1,:,:] += (FX[0,:,:] - FX[-1,:,:])*self.div_x
-        rhs_u[:,-1,:] += (FY[:,0,:] - FY[:,-1,:])*self.div_y
-        rhs_u[:,:,-1] += (FZ[:,:,0] - FZ[:,:,-1])*self.div_z
