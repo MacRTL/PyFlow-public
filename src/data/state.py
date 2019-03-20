@@ -93,13 +93,13 @@ class state_P:
         
         # Allocate data arrays
         # State data
-        self.var     = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(geo.device)
+        self.var      = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(geo.device)
         # Interpolated state data
-        self.var_i   = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec).to(geo.device)
+        self.var_i    = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(geo.device)
         # First derivatives
-        self.grad_x  = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec).to(geo.device)
-        self.grad_y  = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec).to(geo.device)
-        self.grad_z  = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec).to(geo.device)
+        self.grad_x   = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(geo.device)
+        self.grad_y   = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(geo.device)
+        self.grad_z   = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(geo.device)
 
         # Copy initial conditions into the data tensor
         if (IC.any()):
@@ -149,10 +149,15 @@ class state_P:
 
     def vel_corr(self,inGrad,inScalar):
         # Only used when state is a velocity component
+        imin_ = self.imin_; imax_ = self.imax_+1
+        jmin_ = self.jmin_; jmax_ = self.jmax_+1
+        kmin_ = self.kmin_; kmax_ = self.kmax_+1
+        
         # Subtract inGrad*inScalar
-        self.var[self.imin_:self.imax_+1,
-                 self.jmin_:self.jmax_+1,
-                 self.kmin_:self.kmax_+1].sub_(inScalar, inGrad[:-1,:-1,:-1])
+        self.var[imin_:imax_,
+                 jmin_:jmax_,
+                 kmin_:kmax_].sub_(inScalar,
+                                   inGrad[imin_:imax_,jmin_:jmax_,kmin_:kmax_])
         
         # Update the overlap cells
         self.update_border()

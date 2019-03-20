@@ -82,12 +82,12 @@ configName = "restart"
 #configName = "periodicGaussian"
 #configName = "uniform"
 #configName = "notAchannel"
-#configNx   = 256
-#configNy   = 128
-#configNz   = 256
-#configLx   = 0.008
-#configLy   = 0.004
-#configLz   = 0.008
+#configNx   = 64
+#configNy   = 64
+#configNz   = 64
+#configLx   = 1.0
+#configLy   = 1.0
+#configLz   = 1.0
 
 # Data and config files to read
 if (configName=='restart'):
@@ -100,7 +100,7 @@ if (configName=='restart'):
 
 # Data file to write
 fNameOut     = 'data_dnsbox_128_Lx0.0056.PF'
-numItDataOut = 20
+numItDataOut = 500
 
 # Model constants
 mu  = 1.8678e-5
@@ -108,12 +108,12 @@ rho = 1.2
 
 # Time step info
 simDt        = 2.5e-6
-numIt        = 5
+numIt        = 500
 startTime    = 0.0
 
 # SFS model
-#   SFSModel options: none, Smagorinsky, nn
-SFSModel = 'Smagorinsky'
+#   SFSmodel options: none, Smagorinsky, nn
+SFSmodel = 'Smagorinsky'
 
 # Solver settings
 #   solverName options:   Euler, RK4
@@ -131,7 +131,7 @@ Num_pressure_iterations = 300
 
 # Output options
 plotState    = True
-numItPlotOut = 2
+numItPlotOut = 50
 
 # Comparison options
 useTargetData = False
@@ -261,6 +261,9 @@ nz_ = geometry.nz_
 imin_ = geometry.imin_; imax_ = geometry.imax_
 jmin_ = geometry.jmin_; jmax_ = geometry.jmax_
 kmin_ = geometry.kmin_; kmax_ = geometry.kmax_
+nxo_ = geometry.nxo_
+nyo_ = geometry.nyo_
+nzo_ = geometry.nzo_
 
 # Initialize the metrics
 metric = metric_staggered.metric_uniform(geometry)
@@ -332,11 +335,22 @@ if (solverName[:-1]=="RK"):
     state_wTmp_P = state.state_P(geometry,IC_w_np)
 
 # Allocate workspace arrays
-Closure_u_P = torch.FloatTensor( IC_zeros_np ).to(device)
-Closure_v_P = torch.FloatTensor( IC_zeros_np ).to(device)
-Closure_w_P = torch.FloatTensor( IC_zeros_np ).to(device)    
-source_P    = torch.zeros(nx_,ny_,nz_,dtype=precision).to(device)
+source_P = torch.zeros(nx_,ny_,nz_,dtype=precision).to(device)
+VISC_P   = torch.ones(nxo_,nyo_,nzo_,dtype=precision).to(device)
+VISC_P.mul_(mu)
 
+# SFS model
+if (SFSmodel=='Smagorinsky'):
+    use_SFSmodel = True
+    sfsmodel = sfsmodel_smagorinsky.stress_constCs(geometry,metric)
+else:
+    # Construct a blank SFSmodel object
+    use_SFSmodel = False
+    sfsmodel = sfsmodel_smagorinsky.stress_constCs(geometry,metric)
+
+# Save the molecular viscosity
+if (use_SFSmodel):
+    muMolec = mu
 
 # Allocate RHS objects
 print(' ')
@@ -441,49 +455,50 @@ for iterations in range(1):
         #model_output = model( state_u_P.var)
         #model_output2 = model_output.cpu()
 
-        # Do we use an SFS model?
-        if (SFSModel=='Smagorinsky'):
-            Closure_u_P, Closure_v_P, Closure_w_P = sfsmodel_smagorinsky.eval(geometry.dx, state_u_P,state_v_P,state_w_P,
-                                                                              Closure_u_P, Closure_v_P, Closure_w_P, metric)
-        else:
-            Closure_u_P = 0.0
-            Closure_v_P = 0.0
-            Closure_w_P = 0.0
-        
+        # Evaluate any SFS models
+        if (use_SFSmodel):
+            if (sfsmodel.modelType=='eddyVisc'):
+                muEddy = sfsmodel.eddyVisc(state_u_P,state_v_P,state_w_P,rho,metric)
+                VISC_P.copy_( muMolec + muEddy )
+            elif (sfsmodel.modelType=='tensor'):
+                print(' --> SFS model type not implemented')
+            else:
+                print(' --> SFS model type not implemented')
+                
         # Compute velocity prediction
         if (solverName=="Euler"):
             # rhs
-            rhs1.evaluate(state_u_P,state_v_P,state_w_P,mu,rho,metric)
+            rhs1.evaluate(state_u_P,state_v_P,state_w_P,VISC_P,rho,metric)
 
             # Update the state using explicit Euler
-            state_u_P.var = state_u_P.var + ( rhs1.rhs_u - Closure_u_P )*simDt
-            state_v_P.var = state_v_P.var + ( rhs1.rhs_v - Closure_v_P )*simDt
-            state_w_P.var = state_w_P.var + ( rhs1.rhs_w - Closure_w_P )*simDt
+            state_u_P.var = state_u_P.var + rhs1.rhs_u*simDt
+            state_v_P.var = state_v_P.var + rhs1.rhs_v*simDt
+            state_w_P.var = state_w_P.var + rhs1.rhs_w*simDt
 
         elif (solverName=="RK4"):
             
-            # [JFM] needs turbulence models
+            # [JFM] need to pass tensor-type turbulence models into the RHS
             
             # Stage 1
-            rhs1.evaluate(state_u_P,state_v_P,state_w_P,mu,rho,metric)
+            rhs1.evaluate(state_u_P,state_v_P,state_w_P,VISC_P,rho,metric)
             
             # Stage 2
             state_uTmp_P.ZAXPY(0.5*simDt,rhs1.rhs_u,state_u_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
             state_vTmp_P.ZAXPY(0.5*simDt,rhs1.rhs_v,state_v_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
             state_wTmp_P.ZAXPY(0.5*simDt,rhs1.rhs_w,state_w_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
-            rhs2.evaluate(state_uTmp_P,state_vTmp_P,state_wTmp_P,mu,rho,metric)
+            rhs2.evaluate(state_uTmp_P,state_vTmp_P,state_wTmp_P,VISC_P,rho,metric)
 
             # Stage 3
             state_uTmp_P.ZAXPY(0.5*simDt,rhs2.rhs_u,state_u_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
             state_vTmp_P.ZAXPY(0.5*simDt,rhs2.rhs_v,state_v_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
             state_wTmp_P.ZAXPY(0.5*simDt,rhs2.rhs_w,state_w_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
-            rhs3.evaluate(state_uTmp_P,state_vTmp_P,state_wTmp_P,mu,rho,metric)
+            rhs3.evaluate(state_uTmp_P,state_vTmp_P,state_wTmp_P,VISC_P,rho,metric)
 
             # Stage 4
             state_uTmp_P.ZAXPY(simDt,rhs3.rhs_u,state_u_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
             state_vTmp_P.ZAXPY(simDt,rhs3.rhs_v,state_v_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
             state_wTmp_P.ZAXPY(simDt,rhs3.rhs_w,state_w_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
-            rhs4.evaluate(state_uTmp_P,state_vTmp_P,state_wTmp_P,mu,rho,metric)
+            rhs4.evaluate(state_uTmp_P,state_vTmp_P,state_wTmp_P,VISC_P,rho,metric)
 
             # Update the state
             state_u_P.update( state_u_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1]
