@@ -113,7 +113,7 @@ startTime    = 0.0
 
 # SFS model
 #   SFSmodel options: none, Smagorinsky, nn
-SFSmodel = 'Smagorinsky'
+SFSmodel = 'none' #'Smagorinsky'
 
 # Solver settings
 #   solverName options:   Euler, RK4

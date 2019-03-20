@@ -91,20 +91,20 @@ class metric_uniform:
     # -----------------------------------------------
     # Interpolation of a scalar to xy-edges
     def interp_sc_xy(self,SC,interp_SC):
-        interp_SC[1:,1:,:] = self.interp_x*self.interp_y*( SC[1:,1: ,:] + SC[:-1,1: ,:] +
-                                                           SC[1:,:-1,:] + SC[:-1,:-1,:] )
+        interp_SC[1:,1:,:].copy_(self.interp_x*self.interp_y*( SC[1:,1: ,:] + SC[:-1,1: ,:] +
+                                                               SC[1:,:-1,:] + SC[:-1,:-1,:] ))
         
     # -----------------------------------------------
     # Interpolation of a scalar to xz-edges
     def interp_sc_xz(self,SC,interp_SC):
-        interp_SC[1:,:,1:] = self.interp_x*self.interp_z*( SC[1:,:,1: ] + SC[:-1,:,1: ] +
-                                                           SC[1:,:,:-1] + SC[:-1,:,:-1] )
+        interp_SC[1:,:,1:].copy_(self.interp_x*self.interp_z*( SC[1:,:,1: ] + SC[:-1,:,1: ] +
+                                                               SC[1:,:,:-1] + SC[:-1,:,:-1] ))
         
     # -----------------------------------------------
     # Interpolation of a scalar to yz-edges
     def interp_sc_yz(self,SC,interp_SC):
-        interp_SC[:,1:,1:] = self.interp_y*self.interp_z*( SC[:,1:,1: ] + SC[:,:-1,1: ] +
-                                                           SC[:,1:,:-1] + SC[:,:-1,:-1] )
+        interp_SC[:,1:,1:].copy_(self.interp_y*self.interp_z*( SC[:,1:,1: ] + SC[:,:-1,1: ] +
+                                                               SC[:,1:,:-1] + SC[:,:-1,:-1] ))
 
 
     # -----------------------------------------------
@@ -236,17 +236,17 @@ class metric_uniform:
     # Gradient of the pressure to the cell faces (pressure correction)
     #  --> This method only works for uniform grids
     def grad_P(self,state):
-        state.grad_x[:-1,:,:].copy_( state.var[1: ,:,:] )
-        state.grad_x[:-1,:,:].sub_ ( state.var[:-1,:,:] )
-        state.grad_x[:-1,:,:].mul_ ( self.grad_x )
+        state.grad_x[1:,:,:].copy_( state.var[1: ,:,:] )
+        state.grad_x[1:,:,:].sub_ ( state.var[:-1,:,:] )
+        state.grad_x[1:,:,:].mul_ ( self.grad_x )
 
-        state.grad_y[:,:-1,:].copy_( state.var[:,1: ,:] )
-        state.grad_y[:,:-1,:].sub_ ( state.var[:,:-1,:] )
-        state.grad_y[:,:-1,:].mul_ ( self.grad_y )
+        state.grad_y[:,1:,:].copy_( state.var[:,1: ,:] )
+        state.grad_y[:,1:,:].sub_ ( state.var[:,:-1,:] )
+        state.grad_y[:,1:,:].mul_ ( self.grad_y )
 
-        state.grad_z[:,:,:-1].copy_( state.var[:,:,1: ] )
-        state.grad_z[:,:,:-1].sub_ ( state.var[:,:,:-1] )
-        state.grad_z[:,:,:-1].mul_ ( self.grad_z )
+        state.grad_z[:,:,1:].copy_( state.var[:,:,1: ] )
+        state.grad_z[:,:,1:].sub_ ( state.var[:,:,:-1] )
+        state.grad_z[:,:,1:].mul_ ( self.grad_z )
 
 
     # -------------------------------------------------
