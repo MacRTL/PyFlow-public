@@ -41,33 +41,33 @@ import state
 # Scalar advection-diffusion equation RHS
 # ----------------------------------------------------
 class rhs_scalar:
-    def __init__(self,geo,uConv,vConv,wConv):
+    def __init__(self,decomp,uConv,vConv,wConv):
         # Default precision
-        prec = geo.prec
+        prec = decomp.prec
 
         # Data sizes
-        nx_ = geo.nx_
-        ny_ = geo.ny_
-        nz_ = geo.nz_
+        nx_ = decomp.nx_
+        ny_ = decomp.ny_
+        nz_ = decomp.nz_
         
         IC_ones_np = np.ones( (nx_,ny_,nz_) )
-        self.state_uConv = state.data_P(geo,uConv*IC_ones_np)
-        self.state_vConv = state.data_P(geo,vConv*IC_ones_np)
-        self.state_wConv = state.data_P(geo,wConv*IC_ones_np)
+        self.state_uConv = state.state_P(decomp,uConv*IC_ones_np)
+        self.state_vConv = state.state_P(decomp,vConv*IC_ones_np)
+        self.state_wConv = state.state_P(decomp,wConv*IC_ones_np)
         del IC_ones_np
         
         # Allocate rhs arrays
-        self.rhs_u = torch.zeros(nx_,ny_,nz_,dtype=prec).to(geo.device)
-        self.rhs_v = torch.zeros(nx_,ny_,nz_,dtype=prec).to(geo.device)
-        self.rhs_w = torch.zeros(nx_,ny_,nz_,dtype=prec).to(geo.device)
-        self.FX    = torch.zeros(nx_+1,ny_,nz_,dtype=prec).to(geo.device)
-        self.FY    = torch.zeros(nx_,ny_+1,nz_,dtype=prec).to(geo.device)
-        self.FZ    = torch.zeros(nx_,ny_,nz_+1,dtype=prec).to(geo.device)
+        self.rhs_u = torch.zeros(nx_,ny_,nz_,dtype=prec).to(decomp.device)
+        self.rhs_v = torch.zeros(nx_,ny_,nz_,dtype=prec).to(decomp.device)
+        self.rhs_w = torch.zeros(nx_,ny_,nz_,dtype=prec).to(decomp.device)
+        self.FX    = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec).to(decomp.device)
+        self.FY    = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec).to(decomp.device)
+        self.FZ    = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec).to(decomp.device)
 
             
     # ----------------------------------------------------
     # Evaluate the RHS
-    def evaluate(self,state_u,state_v,state_w,mu,rho,metric):
+    def evaluate(self,state_u,state_v,state_w,VISC,rho,metric):
         # Zero the rhs
         self.rhs_u.zero_()
         self.rhs_v.zero_()
@@ -80,21 +80,21 @@ class rhs_scalar:
         
         # Scalar diffusive fluxes
         # x
-        self.FX = mu/rho * state_u.grad_x
-        self.FY = mu/rho * state_u.grad_y
-        self.FZ = mu/rho * state_u.grad_z
+        self.FX = VISC/rho * state_u.grad_x
+        self.FY = VISC/rho * state_u.grad_y
+        self.FZ = VISC/rho * state_u.grad_z
         metric.div_visc(self.FX,self.FY,self.FZ,self.rhs_u)
         
         # y
-        self.FX = mu/rho * state_v.grad_x
-        self.FY = mu/rho * state_v.grad_y
-        self.FZ = mu/rho * state_v.grad_z
+        self.FX = VISC/rho * state_v.grad_x
+        self.FY = VISC/rho * state_v.grad_y
+        self.FZ = VISC/rho * state_v.grad_z
         metric.div_visc(self.FX,self.FY,self.FZ,self.rhs_v)
         
         # z
-        self.FX = mu/rho * state_w.grad_x
-        self.FY = mu/rho * state_w.grad_y
-        self.FZ = mu/rho * state_w.grad_z
+        self.FX = VISC/rho * state_w.grad_x
+        self.FY = VISC/rho * state_w.grad_y
+        self.FZ = VISC/rho * state_w.grad_z
         metric.div_visc(self.FX,self.FY,self.FZ,self.rhs_w)
         
         # Scalar advective fluxes
@@ -143,27 +143,31 @@ class rhs_scalar:
 # Navier-Stokes equation RHS for pressure-projection
 # ----------------------------------------------------
 class rhs_NavierStokes:
-    def __init__(self,geo):
+    def __init__(self,decomp):
         # Default precision
-        prec = geo.prec
+        prec = decomp.prec
 
         # Data sizes
-        nx_ = geo.nx_
-        ny_ = geo.ny_
-        nz_ = geo.nz_
+        nx_ = decomp.nx_
+        ny_ = decomp.ny_
+        nz_ = decomp.nz_
+        nxo_ = decomp.nxo_
+        nyo_ = decomp.nyo_
+        nzo_ = decomp.nzo_
         
         # Allocate rhs arrays
-        self.rhs_u = torch.zeros(nx_,ny_,nz_,dtype=prec).to(geo.device)
-        self.rhs_v = torch.zeros(nx_,ny_,nz_,dtype=prec).to(geo.device)
-        self.rhs_w = torch.zeros(nx_,ny_,nz_,dtype=prec).to(geo.device)
-        self.FX    = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec).to(geo.device)
-        self.FY    = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec).to(geo.device)
-        self.FZ    = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec).to(geo.device)
+        self.rhs_u = torch.zeros(nx_,ny_,nz_,dtype=prec).to(decomp.device)
+        self.rhs_v = torch.zeros(nx_,ny_,nz_,dtype=prec).to(decomp.device)
+        self.rhs_w = torch.zeros(nx_,ny_,nz_,dtype=prec).to(decomp.device)
+        self.FX    = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(decomp.device)
+        self.FY    = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(decomp.device)
+        self.FZ    = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(decomp.device)
+        self.interp_VISC = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(decomp.device)
 
             
     # ----------------------------------------------------
     # Evaluate the RHS
-    def evaluate(self,state_u,state_v,state_w,mu,rho,metric):
+    def evaluate(self,state_u,state_v,state_w,VISC,rho,metric):
         # Zero the rhs
         self.rhs_u.zero_()
         self.rhs_v.zero_()
@@ -178,45 +182,51 @@ class rhs_NavierStokes:
         metric.grad_vel_visc(state_w)
         
         # Viscous fluxes
-        # x
         #print(self.FX.device)
         #print(state_u.grad_x.device)
+        # xx
         self.FX.copy_( state_u.grad_x )
-        self.FX.mul_ ( 2.0*mu/rho )
+        self.FX.mul_ ( 2.0*VISC/rho )
+        # xy
+        metric.interp_sc_xy(VISC,self.interp_VISC)
         self.FY.copy_( state_u.grad_y )
         self.FY.add_ ( state_v.grad_x )
-        self.FY.mul_ ( mu/rho )
+        self.FY.mul_ ( self.interp_VISC/rho )
+        # xz
+        metric.interp_sc_xz(VISC,self.interp_VISC)
         self.FZ.copy_( state_u.grad_z )
         self.FZ.add_ ( state_w.grad_x )
-        self.FZ.mul_ ( mu/rho )
+        self.FZ.mul_ ( self.interp_VISC/rho )
         metric.div_visc(self.FX,self.FY,self.FZ,self.rhs_u)
         
-        # y
+        # yx
+        metric.interp_sc_xy(VISC,self.interp_VISC)
         self.FX.copy_( state_v.grad_x )
         self.FX.add_ ( state_u.grad_y )
-        self.FX.mul_ ( mu/rho )
+        self.FX.mul_ ( self.interp_VISC/rho )
+        # yy
         self.FY.copy_( state_v.grad_y )
-        self.FY.mul_ ( 2.0*mu/rho )
+        self.FY.mul_ ( 2.0*VISC/rho )
+        # yz
+        metric.interp_sc_yz(VISC,self.interp_VISC)
         self.FZ.copy_( state_v.grad_z )
         self.FZ.add_ ( state_w.grad_y )
-        self.FZ.mul_ ( mu/rho )
-        #self.FX = mu/rho * (state_v.grad_x + state_u.grad_y)
-        #self.FY = 2.0*mu/rho * state_v.grad_y
-        #self.FZ = mu/rho * (state_v.grad_z + state_w.grad_y)
+        self.FZ.mul_ ( self.interp_VISC/rho )
         metric.div_visc(self.FX,self.FY,self.FZ,self.rhs_v)
         
-        # z
+        # zx
+        metric.interp_sc_xz(VISC,self.interp_VISC)
         self.FX.copy_( state_w.grad_x )
         self.FX.add_ ( state_u.grad_z )
-        self.FX.mul_ ( mu/rho )
+        self.FX.mul_ ( self.interp_VISC/rho )
+        # zy
+        metric.interp_sc_yz(VISC,self.interp_VISC)
         self.FY.copy_( state_w.grad_y )
         self.FY.add_ ( state_v.grad_z )
-        self.FY.mul_ ( mu/rho )
+        self.FY.mul_ ( self.interp_VISC/rho )
+        # zz
         self.FZ.copy_( state_w.grad_z )
-        self.FZ.mul_ ( 2.0*mu/rho )
-        #self.FX = mu/rho * (state_w.grad_x + state_u.grad_z)
-        #self.FY = mu/rho * (state_w.grad_y + state_v.grad_z)
-        #self.FZ = 2.0*mu/rho * state_w.grad_z
+        self.FZ.mul_ ( 2.0*VISC/rho )
         metric.div_visc(self.FX,self.FY,self.FZ,self.rhs_w)
         
         # Advective fluxes

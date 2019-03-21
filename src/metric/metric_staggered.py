@@ -33,7 +33,7 @@ import numpy as np
 from scipy.sparse import diags
 
 # ------------------------------------------------------
-# Staggered central-difference schemes for UNIFORM grids
+# Staggered central-difference schemes for uniform grids
 # ------------------------------------------------------
 class metric_uniform:
     def __init__(self,geo):
@@ -88,168 +88,191 @@ class metric_uniform:
             print("grid type not implemented")
 
 
-    # ----------------------------------------------------
-    # Interpolation of a cell-centered variable to x-faces
-    def interp_sc_x(self,state):
-        imin_ = self.imin_; imax_ = self.imax_+1
-        jmin_ = self.jmin_; jmax_ = self.jmax_+1
-        kmin_ = self.kmin_; kmax_ = self.kmax_+1
+    # -----------------------------------------------
+    # Interpolation of a scalar to xy-edges
+    def interp_sc_xy(self,SC,interp_SC):
+        interp_SC[1:,1:,:].copy_(self.interp_x*self.interp_y*( SC[1:,1: ,:] + SC[:-1,1: ,:] +
+                                                               SC[1:,:-1,:] + SC[:-1,:-1,:] ))
         
-        state.var_i[:-1,:,:] = self.interp_x*(state.var[1:,:,:] + state.var[:-1,:,:])
-
-        # Periodic boundary
-        state.var_i[-1,:,:] = self.interp_x*(state.var[0,:,:] + state.var[-1,:,:])
-
-    # ----------------------------------------------------
-    # Interpolation of a cell-centered variable to y-faces
-    def interp_sc_y(self,state):
-        imin_ = self.imin_; imax_ = self.imax_+1
-        jmin_ = self.jmin_; jmax_ = self.jmax_+1
-        kmin_ = self.kmin_; kmax_ = self.kmax_+1
+    # -----------------------------------------------
+    # Interpolation of a scalar to xz-edges
+    def interp_sc_xz(self,SC,interp_SC):
+        interp_SC[1:,:,1:].copy_(self.interp_x*self.interp_z*( SC[1:,:,1: ] + SC[:-1,:,1: ] +
+                                                               SC[1:,:,:-1] + SC[:-1,:,:-1] ))
         
-        state.var_i[:,:-1,:] = self.interp_y*(state.var[:,1:,:] + state.var[:,:-1,:])
-
-        # Periodic boundary
-        state.var_i[:,-1,:] = self.interp_y*(state.var[:,0,:] + state.var[:,-1,:])
-
-    # ----------------------------------------------------
-    # Interpolation of a cell-centered variable to z-faces
-    def interp_sc_z(self,state):
-        imin_ = self.imin_; imax_ = self.imax_+1
-        jmin_ = self.jmin_; jmax_ = self.jmax_+1
-        kmin_ = self.kmin_; kmax_ = self.kmax_+1
-        
-        state.var_i[:,:,:-1] = self.interp_z*(state.var[:,:,1:] + state.var[:,:,:-1])
-
-        # Periodic boundary
-        state.var_i[:,:,-1] = self.interp_z*(state.var[:,:,0] + state.var[:,:,-1])
+    # -----------------------------------------------
+    # Interpolation of a scalar to yz-edges
+    def interp_sc_yz(self,SC,interp_SC):
+        interp_SC[:,1:,1:].copy_(self.interp_y*self.interp_z*( SC[:,1:,1: ] + SC[:,:-1,1: ] +
+                                                               SC[:,1:,:-1] + SC[:,:-1,:-1] ))
 
 
     # -----------------------------------------------
     # Interpolation of the x-velocity to cell centers
     def interp_u_xm(self,state):
-        imin_ = self.imin_; imax_ = self.imax_+1
-        jmin_ = self.jmin_; jmax_ = self.jmax_+1
-        kmin_ = self.kmin_; kmax_ = self.kmax_+1
-        
-        state.var_i = self.interp_xm*( state.var[imin_  :imax_+1,jmin_:jmax_+1,kmin_:kmax_+1] +
-                                       state.var[imin_-1:imax_  ,jmin_:jmax_+1,kmin_:kmax_+1] )
+        state.var_i[:-1,:,:] = 0.5*( state.var[1:,:,:] + state.var[:-1,:,:] )
+        #state.update_border_i()
 
     # -----------------------------------------------
     # Interpolation of the y-velocity to cell centers
     def interp_v_ym(self,state):
-        imin_ = self.imin_; imax_ = self.imax_+1
-        jmin_ = self.jmin_; jmax_ = self.jmax_+1
-        kmin_ = self.kmin_; kmax_ = self.kmax_+1
-        
-        state.var_i = self.interp_ym*( state.var[imin_:imax_+1,jmin_  :jmax_+1,kmin_:kmax_+1] +
-                                       state.var[imin_:imax_+1,jmin_-1:jmax_  ,kmin_:kmax_+1] )
+        state.var_i[:,:-1,:] = 0.5*( state.var[:,1:,:] + state.var[:,:-1,:] )
+        #state.update_border_i()
 
     # -----------------------------------------------
     # Interpolation of the z-velocity to cell centers
     def interp_w_zm(self,state):
-        imin_ = self.imin_; imax_ = self.imax_+1
-        jmin_ = self.jmin_; jmax_ = self.jmax_+1
-        kmin_ = self.kmin_; kmax_ = self.kmax_+1
-        
-        state.var_i = self.interp_zm*( state.var[imin_:imax_+1,jmin_:jmax_+1,kmin_  :kmax_+1] +
-                                       state.var[imin_:imax_+1,jmin_:jmax_+1,kmin_-1:kmax_  ] )
+        state.var_i[:,:,:-1] = 0.5*( state.var[:,:,1:] + state.var[:,:,:-1] )
+        #state.update_border_i()
 
         
     # ---------------------------------------------------
     # Interpolation of the v- and w-velocities to x-edges
     def interp_vw_x(self,state):
-        imin_ = self.imin_; imax_ = self.imax_+1
-        jmin_ = self.jmin_; jmax_ = self.jmax_+1
-        kmin_ = self.kmin_; kmax_ = self.kmax_+1
-        
-        state.var_i = self.interp_x*( state.var[imin_  :imax_+1,jmin_:jmax_+1,kmin_:kmax_+1] +
-                                      state.var[imin_-1:imax_  ,jmin_:jmax_+1,kmin_:kmax_+1] )
+        state.var_i[1:,:,:] = self.interp_x*( state.var[1:,:,:] + state.var[:-1,:,:] )
+        #state.update_border_i()
         
     # ---------------------------------------------------
     # Interpolation of the u- and w-velocities to y-edges
     def interp_uw_y(self,state):
-        imin_ = self.imin_; imax_ = self.imax_+1
-        jmin_ = self.jmin_; jmax_ = self.jmax_+1
-        kmin_ = self.kmin_; kmax_ = self.kmax_+1
-        
-        state.var_i = self.interp_y*( state.var[imin_:imax_+1,jmin_  :jmax_+1,kmin_:kmax_+1] +
-                                      state.var[imin_:imax_+1,jmin_-1:jmax_  ,kmin_:kmax_+1] )
+        state.var_i[:,1:,:] = self.interp_y*( state.var[:,1:,:] + state.var[:,:-1,:] )
+        #state.update_border_i()
 
     # ---------------------------------------------------
     # Interpolation of the u- and v-velocities to z-edges
     def interp_uv_z(self,state):
-        imin_ = self.imin_; imax_ = self.imax_+1
-        jmin_ = self.jmin_; jmax_ = self.jmax_+1
-        kmin_ = self.kmin_; kmax_ = self.kmax_+1
+        state.var_i[:,:,1:] = self.interp_z*( state.var[:,:,1:] + state.var[:,:,:-1] )
+        #state.update_border_i()
+
         
-        state.var_i = self.interp_z*( state.var[imin_:imax_+1,jmin_:jmax_+1,kmin_  :kmax_+1] +
-                                      state.var[imin_:imax_+1,jmin_:jmax_+1,kmin_-1:kmax_  ] )
+    # ----------------------------------------------------
+    # Interpolation of cell-centered velocities to x-faces
+    def interp_uvwi_x(self,state):
+        state.var_i[1:,:,:] = self.interp_x*( state.var_i[1:,:,:] + state.var_i[:-1,:,:] )
+        #state.update_border_i()
+        
+    # ----------------------------------------------------
+    # Interpolation of cell-centered velocities to y-faces
+    def interp_uvwi_y(self,state):
+        state.var_i[:,1:,:] = self.interp_y*( state.var_i[:,1:,:] + state.var_i[:,:-1,:] )
+        #state.update_border_i()
+        
+    # ----------------------------------------------------
+    # Interpolation of cell-centered velocities to z-faces
+    def interp_uvwi_z(self,state):
+        state.var_i[:,:,1:] = self.interp_z*( state.var_i[:,:,1:] + state.var_i[:,:,:-1] )
+        #state.update_border_i()
+
+
+    # ------------------------------------------------------------
+    # Gradient of velocity at cell centers
+    def grad_vel_center(self,state,comp):
+        if (comp=='u'):
+            # x
+            state.grad_x[:-1,:,:].copy_( state.var[1: ,:,:] )
+            state.grad_x[:-1,:,:].sub_ ( state.var[:-1,:,:] )
+            state.grad_x[:-1,:,:].mul_ ( self.grad_x )
+            # y
+            self.interp_u_xm(state)
+            self.interp_uvwi_y(state)
+            state.grad_y[:,:-1,:].copy_( state.var_i[:,1: ,:] )
+            state.grad_y[:,:-1,:].sub_ ( state.var_i[:,:-1,:] )
+            state.grad_y[:,:-1,:].mul_ ( self.grad_y )
+            # z
+            self.interp_u_xm(state)
+            self.interp_uvwi_z(state)
+            state.grad_z[:,:,:-1].copy_( state.var_i[:,:,1: ] )
+            state.grad_z[:,:,:-1].sub_ ( state.var_i[:,:,:-1] )
+            state.grad_z[:,:,:-1].mul_ ( self.grad_z )
+            
+        elif (comp=='v'):
+            # x
+            self.interp_v_ym(state)
+            self.interp_uvwi_x(state)
+            state.grad_x[:-1,:,:].copy_( state.var_i[1: ,:,:] )
+            state.grad_x[:-1,:,:].sub_ ( state.var_i[:-1,:,:] )
+            state.grad_x[:-1,:,:].mul_ ( self.grad_x )
+            # y
+            state.grad_y[:,:-1,:].copy_( state.var[:,1: ,:] )
+            state.grad_y[:,:-1,:].sub_ ( state.var[:,:-1,:] )
+            state.grad_y[:,:-1,:].mul_ ( self.grad_y )
+            # z
+            self.interp_v_ym(state)
+            self.interp_uvwi_z(state)
+            state.grad_z[:,:,:-1].copy_( state.var_i[:,:,1: ] )
+            state.grad_z[:,:,:-1].sub_ ( state.var_i[:,:,:-1] )
+            state.grad_z[:,:,:-1].mul_ ( self.grad_z )
+
+        elif (comp=='w'):
+            # x
+            self.interp_w_zm(state)
+            self.interp_uvwi_x(state)
+            state.grad_x[:-1,:,:].copy_( state.var_i[1: ,:,:] )
+            state.grad_x[:-1,:,:].sub_ ( state.var_i[:-1,:,:] )
+            state.grad_x[:-1,:,:].mul_ ( self.grad_x )
+            # y
+            self.interp_w_zm(state)
+            self.interp_uvwi_y(state)
+            state.grad_y[:,:-1,:].copy_( state.var_i[:,1: ,:] )
+            state.grad_y[:,:-1,:].sub_ ( state.var_i[:,:-1,:] )
+            state.grad_y[:,:-1,:].mul_ ( self.grad_y )
+            # z
+            state.grad_z[:,:,:-1].copy_( state.var[:,:,1: ] )
+            state.grad_z[:,:,:-1].sub_ ( state.var[:,:,:-1] )
+            state.grad_z[:,:,:-1].mul_ ( self.grad_z )
+
+
+    # -------------------------------------------------------------
+    # Gradient of velocity at locations needed for the viscous flux
+    #  --> This method only works for uniform grids
+    #  --> On-diagonal gradients computed at cell centers
+    #  --> Off-diagonal gradients computed at +1/2 edge
+    def grad_vel_visc(self,state):
+        state.grad_x[:-1,:,:].copy_( state.var[1: ,:,:] )
+        state.grad_x[:-1,:,:].sub_ ( state.var[:-1,:,:] )
+        state.grad_x[:-1,:,:].mul_ ( self.grad_x )
+
+        state.grad_y[:,:-1,:].copy_( state.var[:,1: ,:] )
+        state.grad_y[:,:-1,:].sub_ ( state.var[:,:-1,:] )
+        state.grad_y[:,:-1,:].mul_ ( self.grad_y )
+
+        state.grad_z[:,:,:-1].copy_( state.var[:,:,1: ] )
+        state.grad_z[:,:,:-1].sub_ ( state.var[:,:,:-1] )
+        state.grad_z[:,:,:-1].mul_ ( self.grad_z )
 
 
     # ----------------------------------------------------------------
     # Gradient of the pressure to the cell faces (pressure correction)
+    #  --> This method only works for uniform grids
     def grad_P(self,state):
-        imin_ = self.imin_; imax_ = self.imax_+1
-        jmin_ = self.jmin_; jmax_ = self.jmax_+1
-        kmin_ = self.kmin_; kmax_ = self.kmax_+1
+        state.grad_x[1:,:,:].copy_( state.var[1: ,:,:] )
+        state.grad_x[1:,:,:].sub_ ( state.var[:-1,:,:] )
+        state.grad_x[1:,:,:].mul_ ( self.grad_x )
 
-        state.grad_x.copy_( state.var[imin_  :imax_+1,jmin_:jmax_+1,kmin_:kmax_+1] )
-        state.grad_x.sub_ ( state.var[imin_-1:imax_  ,jmin_:jmax_+1,kmin_:kmax_+1] )
-        state.grad_x.mul_ ( self.grad_x )
+        state.grad_y[:,1:,:].copy_( state.var[:,1: ,:] )
+        state.grad_y[:,1:,:].sub_ ( state.var[:,:-1,:] )
+        state.grad_y[:,1:,:].mul_ ( self.grad_y )
 
-        state.grad_y.copy_( state.var[imin_:imax_+1,jmin_  :jmax_+1,kmin_:kmax_+1] )
-        state.grad_y.sub_ ( state.var[imin_:imax_+1,jmin_-1:jmax_  ,kmin_:kmax_+1] )
-        state.grad_y.mul_ ( self.grad_y )
-
-        state.grad_z.copy_( state.var[imin_:imax_+1,jmin_:jmax_+1,kmin_  :kmax_+1] )
-        state.grad_z.sub_ ( state.var[imin_:imax_+1,jmin_:jmax_+1,kmin_-1:kmax_  ] )
-        state.grad_z.mul_ ( self.grad_z )
-        
-        #state.grad_x = self.grad_x*( state.var[imin_  :imax_+1,jmin_:jmax_+1,kmin_:kmax_+1] -
-        #                             state.var[imin_-1:imax_  ,jmin_:jmax_+1,kmin_:kmax_+1] )
-        #state.grad_y = self.grad_y*( state.var[imin_:imax_+1,jmin_  :jmax_+1,kmin_:kmax_+1] -
-        #                             state.var[imin_:imax_+1,jmin_-1:jmax_  ,kmin_:kmax_+1] )
-        #state.grad_z = self.grad_z*( state.var[imin_:imax_+1,jmin_:jmax_+1,kmin_  :kmax_+1] -
-        #                             state.var[imin_:imax_+1,jmin_:jmax_+1,kmin_-1:kmax_  ] )
-
-
-    # ------------------------------------------------------------
-    # Gradient of velocity to locations needed by the viscous flux
-    def grad_vel_visc(self,state):
-        imin_ = self.imin_; imax_ = self.imax_+1
-        jmin_ = self.jmin_; jmax_ = self.jmax_+1
-        kmin_ = self.kmin_; kmax_ = self.kmax_+1
-
-        state.grad_x.copy_( state.var[imin_  :imax_+1,jmin_:jmax_+1,kmin_:kmax_+1] )
-        state.grad_x.sub_ ( state.var[imin_-1:imax_  ,jmin_:jmax_+1,kmin_:kmax_+1] )
-        state.grad_x.mul_ ( self.grad_x )
-
-        state.grad_y.copy_( state.var[imin_:imax_+1,jmin_  :jmax_+1,kmin_:kmax_+1] )
-        state.grad_y.sub_ ( state.var[imin_:imax_+1,jmin_-1:jmax_  ,kmin_:kmax_+1] )
-        state.grad_y.mul_ ( self.grad_y )
-
-        state.grad_z.copy_( state.var[imin_:imax_+1,jmin_:jmax_+1,kmin_  :kmax_+1] )
-        state.grad_z.sub_ ( state.var[imin_:imax_+1,jmin_:jmax_+1,kmin_-1:kmax_  ] )
-        state.grad_z.mul_ ( self.grad_z )
-        
-        #state.grad_x = self.grad_x*( state.var[imin_  :imax_+1,jmin_:jmax_+1,kmin_:kmax_+1] -
-        #                             state.var[imin_-1:imax_  ,jmin_:jmax_+1,kmin_:kmax_+1] )
-        #state.grad_y = self.grad_y*( state.var[imin_:imax_+1,jmin_  :jmax_+1,kmin_:kmax_+1] -
-        #                             state.var[imin_:imax_+1,jmin_-1:jmax_  ,kmin_:kmax_+1] )
-        #state.grad_z = self.grad_z*( state.var[imin_:imax_+1,jmin_:jmax_+1,kmin_  :kmax_+1] -
-        #                             state.var[imin_:imax_+1,jmin_:jmax_+1,kmin_-1:kmax_  ] )
+        state.grad_z[:,:,1:].copy_( state.var[:,:,1: ] )
+        state.grad_z[:,:,1:].sub_ ( state.var[:,:,:-1] )
+        state.grad_z[:,:,1:].mul_ ( self.grad_z )
 
 
     # -------------------------------------------------
-    # Divergence of the viscous fluxes
+    # Divergence of the viscous flux
     def div_visc(self,FX,FY,FZ,rhs):
-        rhs.add_( self.div_x, FX[1: ,:-1,:-1] )
-        rhs.sub_( self.div_x, FX[:-1,:-1,:-1] )
-        rhs.add_( self.div_y, FY[:-1,1: ,:-1] )
-        rhs.sub_( self.div_y, FY[:-1,:-1,:-1] )
-        rhs.add_( self.div_z, FZ[:-1,:-1,1: ] )
-        rhs.sub_( self.div_z, FZ[:-1,:-1,:-1] )
+        imin_ = self.imin_; imax_ = self.imax_+1
+        jmin_ = self.jmin_; jmax_ = self.jmax_+1
+        kmin_ = self.kmin_; kmax_ = self.kmax_+1
+        
+        rhs.add_( self.div_x, FX[imin_  :imax_  ,jmin_:jmax_,kmin_:kmax_] )
+        rhs.sub_( self.div_x, FX[imin_-1:imax_-1,jmin_:jmax_,kmin_:kmax_] )
+        
+        rhs.add_( self.div_y, FY[imin_:imax_,jmin_  :jmax_  ,kmin_:kmax_] )
+        rhs.sub_( self.div_y, FY[imin_:imax_,jmin_-1:jmax_-1,kmin_:kmax_] )
+        
+        rhs.add_( self.div_z, FZ[imin_:imax_,jmin_:jmax_,kmin_  :kmax_  ] )
+        rhs.sub_( self.div_z, FZ[imin_:imax_,jmin_:jmax_,kmin_-1:kmax_-1] )
 
         
     # -------------------------------------------------
@@ -275,72 +298,73 @@ class metric_uniform:
     # -------------------------------------------------
     # Convective flux xx
     def vel_conv_xx(self,state_u,state_v,grad_x):
-        grad_x -= ( state_u.var_i[1: ,:-1,:-1] * state_v.var_i[1: ,:-1,:-1] -
-                    state_u.var_i[:-1,:-1,:-1] * state_v.var_i[:-1,:-1,:-1] )*self.grad_x
+        imin_ = self.imin_; imax_ = self.imax_
+        jmin_ = self.jmin_; jmax_ = self.jmax_+1
+        kmin_ = self.kmin_; kmax_ = self.kmax_+1
+
+        grad_x -= ( state_u.var_i[imin_:imax_+1,jmin_:jmax_,kmin_:kmax_] *
+                    state_v.var_i[imin_:imax_+1,jmin_:jmax_,kmin_:kmax_] -
+                    state_u.var_i[imin_-1:imax_,jmin_:jmax_,kmin_:kmax_] *
+                    state_v.var_i[imin_-1:imax_,jmin_:jmax_,kmin_:kmax_] )*self.grad_x
         
     # -------------------------------------------------
     # Convective flux yy
     def vel_conv_yy(self,state_u,state_v,grad_y):
-        grad_y -= ( state_u.var_i[:-1,1: ,:-1] * state_v.var_i[:-1,1: ,:-1] -
-                    state_u.var_i[:-1,:-1,:-1] * state_v.var_i[:-1,:-1,:-1] )*self.grad_y
+        imin_ = self.imin_; imax_ = self.imax_+1
+        jmin_ = self.jmin_; jmax_ = self.jmax_
+        kmin_ = self.kmin_; kmax_ = self.kmax_+1
+
+        grad_y -= ( state_u.var_i[imin_:imax_,jmin_:jmax_+1,kmin_:kmax_] *
+                    state_v.var_i[imin_:imax_,jmin_:jmax_+1,kmin_:kmax_] -
+                    state_u.var_i[imin_:imax_,jmin_-1:jmax_,kmin_:kmax_] *
+                    state_v.var_i[imin_:imax_,jmin_-1:jmax_,kmin_:kmax_] )*self.grad_y
         
     # -------------------------------------------------
     # Convective flux zz
     def vel_conv_zz(self,state_u,state_w,grad_z):
-        grad_z -= ( state_u.var_i[:-1,:-1,1: ] * state_w.var_i[:-1,:-1,1: ] -
-                    state_u.var_i[:-1,:-1,:-1] * state_w.var_i[:-1,:-1,:-1] )*self.grad_z
+        imin_ = self.imin_; imax_ = self.imax_+1
+        jmin_ = self.jmin_; jmax_ = self.jmax_+1
+        kmin_ = self.kmin_; kmax_ = self.kmax_
+
+        grad_z -= ( state_u.var_i[imin_:imax_,jmin_:jmax_,kmin_:kmax_+1] *
+                    state_w.var_i[imin_:imax_,jmin_:jmax_,kmin_:kmax_+1] -
+                    state_u.var_i[imin_:imax_,jmin_:jmax_,kmin_-1:kmax_] *
+                    state_w.var_i[imin_:imax_,jmin_:jmax_,kmin_-1:kmax_] )*self.grad_z
         
     # -------------------------------------------------
     # Off-diagonal convective flux x
     def vel_conv_x(self,state_u,state_v,grad_x):
-        grad_x -= ( state_u.var_i[1: ,:-1,:-1] * state_v.var_i[1: ,:-1,:-1] -
-                    state_u.var_i[:-1,:-1,:-1] * state_v.var_i[:-1,:-1,:-1] )*self.grad_x
+        imin_ = self.imin_; imax_ = self.imax_+1
+        jmin_ = self.jmin_; jmax_ = self.jmax_+1
+        kmin_ = self.kmin_; kmax_ = self.kmax_+1
+
+        grad_x -= ( state_u.var_i[imin_+1:imax_+1,jmin_:jmax_,kmin_:kmax_] *
+                    state_v.var_i[imin_+1:imax_+1,jmin_:jmax_,kmin_:kmax_] -
+                    state_u.var_i[imin_  :imax_  ,jmin_:jmax_,kmin_:kmax_] *
+                    state_v.var_i[imin_  :imax_  ,jmin_:jmax_,kmin_:kmax_] )*self.grad_x
         
     # -------------------------------------------------
     # Off-diagonal convective flux y
     def vel_conv_y(self,state_u,state_v,grad_y):
-        grad_y -= ( state_u.var_i[:-1,1: ,:-1] * state_v.var_i[:-1,1: ,:-1] -
-                    state_u.var_i[:-1,:-1,:-1] * state_v.var_i[:-1,:-1,:-1] )*self.grad_y
+        imin_ = self.imin_; imax_ = self.imax_+1
+        jmin_ = self.jmin_; jmax_ = self.jmax_+1
+        kmin_ = self.kmin_; kmax_ = self.kmax_+1
+
+        grad_y -= ( state_u.var_i[imin_:imax_,jmin_+1:jmax_+1,kmin_:kmax_] *
+                    state_v.var_i[imin_:imax_,jmin_+1:jmax_+1,kmin_:kmax_] -
+                    state_u.var_i[imin_:imax_,jmin_  :jmax_  ,kmin_:kmax_] *
+                    state_v.var_i[imin_:imax_,jmin_  :jmax_  ,kmin_:kmax_] )*self.grad_y
         
     # -------------------------------------------------
     # Off-diagonal convective flux z
     def vel_conv_z(self,state_u,state_w,grad_z):
-        grad_z -= ( state_u.var_i[:-1,:-1,1: ] * state_w.var_i[:-1,:-1,1: ] -
-                    state_u.var_i[:-1,:-1,:-1] * state_w.var_i[:-1,:-1,:-1] )*self.grad_z
+        imin_ = self.imin_; imax_ = self.imax_+1
+        jmin_ = self.jmin_; jmax_ = self.jmax_+1
+        kmin_ = self.kmin_; kmax_ = self.kmax_+1
+
+        grad_z -= ( state_u.var_i[imin_:imax_,jmin_:jmax_,kmin_+1:kmax_+1] *
+                    state_w.var_i[imin_:imax_,jmin_:jmax_,kmin_+1:kmax_+1] -
+                    state_u.var_i[imin_:imax_,jmin_:jmax_,kmin_  :kmax_  ] *
+                    state_w.var_i[imin_:imax_,jmin_:jmax_,kmin_  :kmax_  ] )*self.grad_z
 
 
-
-
-
-        
-
-def deprecated():
-    
-
-    # ------------------------------------------------------------
-    # Gradient of velocity to locations needed by the viscous flux
-    def grad_vel_visc(self,state):
-        state.grad_x[1:,:,:] = self.grad_x*(state.var[1:,:,:] - state.var[:-1,:,:])
-        state.grad_y[:,1:,:] = self.grad_y*(state.var[:,1:,:] - state.var[:,:-1,:])
-        state.grad_z[:,:,1:] = self.grad_z*(state.var[:,:,1:] - state.var[:,:,:-1])
-    
-        # Periodic boundary conditions
-        # x
-        state.grad_x[0,:,:] = self.grad_x*(state.var[0,:,:] - state.var[-1,:,:])
-        # y
-        state.grad_y[:,0,:] = self.grad_y*(state.var[:,0,:] - state.var[:,-1,:])
-        # z
-        state.grad_z[:,:,0] = self.grad_z*(state.var[:,:,0] - state.var[:,:,-1])
-
-
-    # -------------------------------------------------
-    # Divergence of the viscous fluxes
-    def div_visc(self,FX,FY,FZ,rhs_u):
-        rhs_u[:-1,:,:] += (FX[1:,:,:] - FX[:-1,:,:])*self.div_x
-        rhs_u[:,:-1,:] += (FY[:,1:,:] - FY[:,:-1,:])*self.div_y
-        rhs_u[:,:,:-1] += (FZ[:,:,1:] - FZ[:,:,:-1])*self.div_z
-    
-        # Periodic boundary conditions
-        rhs_u[-1,:,:] += (FX[0,:,:] - FX[-1,:,:])*self.div_x
-        rhs_u[:,-1,:] += (FY[:,0,:] - FY[:,-1,:])*self.div_y
-        rhs_u[:,:,-1] += (FZ[:,:,0] - FZ[:,:,-1])*self.div_z
