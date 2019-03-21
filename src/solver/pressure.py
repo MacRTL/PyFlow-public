@@ -130,6 +130,12 @@ class solver_bicgstab_serial:
 
         # Default tolerance
         self.tol = 1e-5
+
+        # Local workspace
+        self.source_P = torch.zeros(geo.nx_,geo.ny_,geo.nz_,
+                                    dtype=geo.prec).to(torch.device('cpu'))
+        self.state_P  = torch.zeros(geo.nx_,geo.ny_,geo.nz_,
+                                    dtype=geo.prec).to(torch.device('cpu'))
         
     def solve(self,state_pOld_P,state_p_P,source_P):
         imin_ = self.imin_; imax_ = self.imax_+1
@@ -142,10 +148,16 @@ class solver_bicgstab_serial:
         # Initial guess is p from previous time step
         state_pOld_P.update(state_p_P.var[imin_:imax_,jmin_:jmax_,kmin_:kmax_])
 
+        # Set up workspace
+        self.source_P.copy_(source_P)
+        self.state_P.copy_ (state_p_P.var[imin_:imax_,jmin_:jmax_,kmin_:kmax_])
+
         # Solve using the Scipy BiCGStab solver
         xOut,info = sp.bicgstab(self.Laplace,
-                                source_P.to(torch.device('cpu')).numpy().ravel(),
-                                state_pOld_P.var[imin_:imax_,jmin_:jmax_,kmin_:kmax_].to(torch.device('cpu')).numpy().ravel(),
+                                self.source_P.numpy().ravel(),
+                                self.state_P.numpy().ravel(),
+                                #source_P.to(torch.device('cpu')).numpy().ravel(),
+                                #state_pOld_P.var[imin_:imax_,jmin_:jmax_,kmin_:kmax_].to(torch.device('cpu')).numpy().ravel(),
                                 tol=self.tol, maxiter=self.Num_pressure_iterations,
                                 M=self.diag )
                                 #callback=report)
