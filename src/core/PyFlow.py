@@ -78,16 +78,17 @@ import sfsmodel_smagorinsky
 
 # Simulation geometry
 #   Options: restart, periodicGaussian, uniform, notAchannel
-configName = "restart"
-#configName = "periodicGaussian"
+#configName = "restart"
+configName = "periodicGaussian"
 #configName = "uniform"
 #configName = "notAchannel"
-#configNx   = 64
-#configNy   = 64
-#configNz   = 64
-#configLx   = 1.0
-#configLy   = 1.0
-#configLz   = 1.0
+configNx   = 64
+configNy   = 64
+configNz   = 64
+configLx   = 1.0
+configLy   = 1.0
+configLz   = 1.0
+isper = [1,1,1]
 
 # Data and config files to read
 if (configName=='restart'):
@@ -102,13 +103,18 @@ if (configName=='restart'):
 fNameOut     = 'data_dnsbox_128_Lx0.0056.PF'
 numItDataOut = 500
 
+# Parallel decomposition
+nproc_x = 1
+nproc_y = 1
+nproc_z = 1
+
 # Model constants
 mu  = 1.8678e-5
 rho = 1.2
 
 # Time step info
 simDt        = 2.5e-6
-numIt        = 500
+numIt        = 10
 startTime    = 0.0
 
 # SFS model
@@ -124,10 +130,10 @@ solverName   = "RK4"
 equationMode = "NS"
 genericOrder = 2
 precision    = torch.float32
-#pSolverMode  = "Jacobi"
-#Num_pressure_iterations = 800
-pSolverMode  = "bicgstab"
-Num_pressure_iterations = 300
+pSolverMode  = "Jacobi"
+Num_pressure_iterations = 800
+#pSolverMode  = "bicgstab"
+#Num_pressure_iterations = 300
 
 # Output options
 plotState    = True
@@ -137,6 +143,42 @@ numItPlotOut = 50
 useTargetData = False
 if (useTargetData):
     targetFileStr  = restartFileStr
+
+
+
+
+# ----------------------------------------------------
+# Configure PyTorch
+# ----------------------------------------------------
+
+# Offload to GPUs if available
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
+
+    
+# ----------------------------------------------------
+# Configure parallel decomposition
+# ----------------------------------------------------
+nproc  = [nproc_x,nproc_y,nproc_z]
+decomp = geo.decomp(configNx,configNy,configNz,nproc,isper)
+
+# Check the decomp
+if (decomp.size!=nproc_x*nproc_y*nproc_z):
+    raise Exception('\nNumber of processors does not match specified domain decomposition\n')
+
+# Local grid sizes
+nx_ = decomp.nx_
+ny_ = decomp.ny_
+nz_ = decomp.nz_
+imin_ = decomp.imin_; imax_ = decomp.imax_
+jmin_ = decomp.jmin_; jmax_ = decomp.jmax_
+kmin_ = decomp.kmin_; kmax_ = decomp.kmax_
+imin_loc = decomp.imin_loc; imax_loc = decomp.imax_loc
+jmin_loc = decomp.jmin_loc; jmax_loc = decomp.jmax_loc
+kmin_loc = decomp.kmin_loc; kmax_loc = decomp.kmax_loc
+nxo_ = decomp.nxo_
+nyo_ = decomp.nyo_
+nzo_ = decomp.nzo_
 
 
 
@@ -154,6 +196,9 @@ if (configName=='restart'):
         configNx = len(xGrid)-1
         configNy = len(yGrid)-1
         configNz = len(zGrid)-1
+        isper = [xper,yper,zper]
+
+        # BCAST these from rank=0
         
         # Read state data from an NGA restart file
         names,startTime,data = dr.readNGArestart(dataFileStr)
@@ -167,6 +212,7 @@ if (configName=='restart'):
 
         # Interpolate grid and state data to cell faces
         # [JFM] NEED TO IMPLEMENT
+        # Need periodicity information
 
     # Extract the initial conditions
     data_IC = data[:,:,:,0:4]
@@ -185,10 +231,10 @@ elif (configName=='periodicGaussian'):
     vMax = 2.0
     wMax = 2.0
     stdDev = 0.1
-    gaussianBump = ( np.exp(  -0.5*(xGrid[:-1,np.newaxis,np.newaxis]/stdDev)**2)
-                     * np.exp(-0.5*(yGrid[np.newaxis,:-1,np.newaxis]/stdDev)**2)
-                     * np.exp(-0.5*(zGrid[np.newaxis,np.newaxis,:-1]/stdDev)**2) )
-    data_IC = np.zeros((configNx,configNy,configNz,4),dtype='float64')
+    gaussianBump = ( np.exp(  -0.5*(xGrid[imin_loc:imax_loc+1,np.newaxis,np.newaxis]/stdDev)**2)
+                     * np.exp(-0.5*(yGrid[np.newaxis,jmin_loc:jmax_loc+1,np.newaxis]/stdDev)**2)
+                     * np.exp(-0.5*(zGrid[np.newaxis,np.newaxis,kmin_loc:kmax_loc+1]/stdDev)**2) )
+    data_IC = np.zeros((nx_,ny_,nz_,4),dtype='float64')
     data_IC[:,:,:,0] = uMax * gaussianBump
     data_IC[:,:,:,1] = vMax * gaussianBump
     data_IC[:,:,:,2] = wMax * gaussianBump
@@ -205,7 +251,7 @@ elif (configName=='uniform'):
     uMax = 2.0
     vMax = 2.0
     wMax = 2.0
-    data_IC = np.zeros((configNx,configNy,configNz,4),dtype='float64')
+    data_IC = np.zeros((nx_,ny_,nz_,4),dtype='float64')
     data_IC[:,:,:,0] = uMax
     data_IC[:,:,:,1] = vMax
     data_IC[:,:,:,2] = wMax
@@ -222,52 +268,30 @@ elif (configName=='notAchannel'):
     vMax = 0.0
     wMax = 0.0
     amp  = 0.4
-    print("Bulk Re={:7f}".format(rho*uMax*configLy/mu))
-    parabolaX = ( 6.0*(yGrid[np.newaxis,:-1,np.newaxis] + 0.5*configLy)
-                  *(0.5*configLy - yGrid[np.newaxis,:-1,np.newaxis])
+    if (decomp.rank==0):
+        print("Bulk Re={:7f}".format(rho*uMax*configLy/mu))
+    parabolaX = ( 6.0*(yGrid[np.newaxis,jmin_loc:jmax_loc+1,np.newaxis] + 0.5*configLy)
+                  *(0.5*configLy - yGrid[np.newaxis,jmin_loc:jmax_loc+1,np.newaxis])
                   /configLy**2 )
     Unorm = np.sqrt(uMax**2 + wMax**2)
-    data_IC = np.zeros((configNx,configNy,configNz,4),dtype='float64')
+    data_IC = np.zeros((nx_,ny_,nz_,4),dtype='float64')
     data_IC[:,:,:,0] = (uMax * parabolaX
-                        + amp*Unorm*np.cos(16.0*3.1415926*xGrid[:-1,np.newaxis,np.newaxis]/configLx))
+                        + amp*Unorm*np.cos(16.0*3.1415926*xGrid[imin_loc:imax_loc+1,np.newaxis,np.newaxis]/configLx))
     data_IC[:,:,:,1] = 0.0
     data_IC[:,:,:,2] = (wMax * parabolaX
-                        + amp*Unorm*np.cos(16.0*3.1415926*zGrid[np.newaxis,np.newaxis,:-1]/configLz))
+                        + amp*Unorm*np.cos(16.0*3.1415926*zGrid[np.newaxis,np.newaxis,kmin_loc:kmax_loc+1]/configLz))
     data_IC[:,:,:,3] = 0.0
     del parabolaX
 
 
-
-# ----------------------------------------------------
-# Configure PyTorch
-# ----------------------------------------------------
-
-# Offload to GPUs if available
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-
     
 # ----------------------------------------------------
-# Configure simulation
+# Configure geometry
 # ----------------------------------------------------
-
-# Initialize the geometry
-#   --> Geometry object also provides parallel decomp/offload settings
-geometry = geo.uniform(xGrid,yGrid,zGrid,device,precision)
-
-# Local grid sizes
-nx_ = geometry.nx_
-ny_ = geometry.ny_
-nz_ = geometry.nz_
-imin_ = geometry.imin_; imax_ = geometry.imax_
-jmin_ = geometry.jmin_; jmax_ = geometry.jmax_
-kmin_ = geometry.kmin_; kmax_ = geometry.kmax_
-nxo_ = geometry.nxo_
-nyo_ = geometry.nyo_
-nzo_ = geometry.nzo_
+geometry = geo.uniform(xGrid,yGrid,zGrid,decomp,device,precision)
 
 # Initialize the metrics
 metric = metric_staggered.metric_uniform(geometry)
-
 
 
 # ----------------------------------------------------
@@ -298,8 +322,8 @@ IC_v_np = data_IC[:,:,:,1]
 IC_w_np = data_IC[:,:,:,2]
 IC_p_np = data_IC[:,:,:,3]
 
-IC_zeros_np = np.zeros( (configNx,configNy,configNz) )
-IC_ones_np  = np.ones ( (configNx,configNy,configNz) )
+IC_zeros_np = np.zeros( (nx_,ny_,nz_) )
+IC_ones_np  = np.ones ( (nx_,ny_,nz_) )
 
     
 # ----------------------------------------------------
@@ -353,9 +377,9 @@ if (use_SFSmodel):
     muMolec = mu
 
 # Allocate RHS objects
-print(' ')
 if (equationMode=='scalar'):
-    print("Solving scalar advection-diffusion equation")
+    if (decomp.rank==0):
+        print("\nSolving scalar advection-diffusion equation")
     rhs1 = velocity.rhs_scalar(geometry,uMax,vMax,wMax)
     if (solverName[:-1]=="RK"):
         rhs2 = velocity.rhs_scalar(geometry,uMax,vMax,wMax)
@@ -363,8 +387,9 @@ if (equationMode=='scalar'):
         rhs4 = velocity.rhs_scalar(geometry,uMax,vMax,wMax)
         
 elif (equationMode=='NS'):
-    print("Solving Navier-Stokes equations")
-    print("Solver settings: advancer={}, pressure={}".format(solverName,pSolverMode))
+    if (decomp.rank==0):
+        print("\nSolving Navier-Stokes equations")
+        print("Solver settings: advancer={}, pressure={}".format(solverName,pSolverMode))
     
     rhs1 = velocity.rhs_NavierStokes(geometry)
     if (solverName[:-1]=="RK"):
@@ -376,10 +401,15 @@ elif (equationMode=='NS'):
     if (pSolverMode=='Jacobi'):
         poisson = pressure.solver_jacobi(geometry,rho,simDt,Num_pressure_iterations)
     elif (pSolverMode=='bicgstab'):
-        poisson = pressure.solver_bicgstab_serial(geometry,metric,rho,simDt,Num_pressure_iterations)
+        if (nproc_x>1 or nproc_y>1 or nproc_z>1):
+            if (decomp.rank==0):
+                raise Exception('\nbicgstab solver currently not implemented in parallel\n')
+        else:
+            poisson = pressure.solver_bicgstab_serial(geometry,metric,rho,simDt,Num_pressure_iterations)
         
 else:
-    print("Equation setting not recognized; consequences unknown...")
+    if (decomp.rank==0):
+        print("Equation setting not recognized; consequences unknown...")
     
 # Clean up
 del IC_u_np
@@ -414,23 +444,26 @@ for iterations in range(1):
 
     # Write the stdout header
     if (equationMode=='NS'):
-        headStr = "  {:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}"
-        print(headStr.format("Step","Time","max CFL","max U","max V","max W","int RP","max res_P"))
+        if (decomp.rank==0):
+            headStr = "  {:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}"
+            print(headStr.format("Step","Time","max CFL","max U","max V","max W","int RP","max res_P"))
     else:
-        headStr = "  {:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}"
-        print(headStr.format("Step","Time","max CFL","max U","max V","max W"))
+        if (decomp.rank==0):
+            headStr = "  {:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}"
+            print(headStr.format("Step","Time","max CFL","max U","max V","max W"))
 
     # Write the initial data file
     timeStr = "{:12.7E}".format(simTime)
-    dr.writeNGArestart(fNameOut+'_'+timeStr,data_all_CPU,False)
+    #dr.writeNGArestart(fNameOut+'_'+timeStr,data_all_CPU,False)
     
-    # Write initial condition stats
+    # Write initial condition stats - JFM make this parallel max
     maxU = torch.max(state_u_P.var)
     maxV = torch.max(state_v_P.var)
     maxW = torch.max(state_w_P.var)
     maxCFL = max((maxU/geometry.dx,maxV/geometry.dy,maxW/geometry.dz))*simDt
-    lineStr = "  {:10d}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}"
-    print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW))
+    if (decomp.rank==0):
+        lineStr = "  {:10d}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}"
+        print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW))
 
     if (plotState):
         timeStr = "{:12.7E}".format(simTime)
@@ -461,9 +494,11 @@ for iterations in range(1):
                 muEddy = sfsmodel.eddyVisc(state_u_P,state_v_P,state_w_P,rho,metric)
                 VISC_P.copy_( muMolec + muEddy )
             elif (sfsmodel.modelType=='tensor'):
-                print(' --> SFS model type not implemented')
+                if (decomp.rank==0):
+                    print(' --> SFS model type not implemented')
             else:
-                print(' --> SFS model type not implemented')
+                if (decomp.rank==0):
+                    print(' --> SFS model type not implemented')
                 
         # Compute velocity prediction
         if (solverName=="Euler"):
@@ -570,11 +605,13 @@ for iterations in range(1):
         
         # Write stats
         if (equationMode=='NS'):
-            lineStr = "  {:10d}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{: 10.6E}\t{: 10.6E}"
-            print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW,int_RP,max_res_P))
+            if (decomp.rank==0):
+                lineStr = "  {:10d}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{: 10.6E}\t{: 10.6E}"
+                print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW,int_RP,max_res_P))
         else:
-            lineStr = "  {:10d}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}"
-            print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW))
+            if (decomp.rank==0):
+                lineStr = "  {:10d}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}"
+                print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW))
 
         # Write output
         if (np.mod(itCount,numItDataOut)==0):
@@ -582,7 +619,7 @@ for iterations in range(1):
             data_all_CPU.time = simTime
             data_all_CPU.dt   = simDt
             timeStr = "{:12.7E}".format(simTime)
-            dr.writeNGArestart(fNameOut+'_'+timeStr,data_all_CPU,False)
+            #dr.writeNGArestart(fNameOut+'_'+timeStr,data_all_CPU,False)
 
         if (plotState and np.mod(itCount,numItPlotOut)==0):
             timeStr = "{:12.7E}".format(simTime)
@@ -605,7 +642,7 @@ for iterations in range(1):
     data_all_CPU.time = simTime
     data_all_CPU.dt   = simDt
     timeStr = "{:12.7E}".format(simTime)
-    dr.writeNGArestart(fNameOut+'_'+timeStr,data_all_CPU,False)
+    #dr.writeNGArestart(fNameOut+'_'+timeStr,data_all_CPU,False)
             
     #Diff = state_u_P.var - Variable( torch.FloatTensor( np.matrix( u_DNS_downsamples[T_factor*(i+1)]).T ) )
     if (useTargetData):
@@ -625,12 +662,14 @@ for iterations in range(1):
     finalEnergy = torch.sum(state_u_P.var**2 + state_v_P.var**2 + state_w_P.var**2)
     
     if (useTargetData):
-        print(iterations,test,error,time_elapsed)
+        if (decomp.rank==0):
+            print(iterations,test,error,time_elapsed)
     else:
-        print("it={}, test={}, elapsed={}, energy init/final={}".format(iterations,test,time_elapsed,
-                                                                        initEnergy/finalEnergy))
+        if (decomp.rank==0):
+            print("it={}, test={}, elapsed={}, energy final/initial={}".format(iterations,test,time_elapsed,
+                                                                           finalEnergy/initEnergy))
 
-    if (plotState):
+    if (plotState and decomp.rank==0):
         # Print a pretty picture
         timeStr = "{:12.7E}".format(simTime)
         dr.plotData(state_u_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_U_"+str(itCount)+"_"+timeStr)

@@ -108,7 +108,7 @@ class state_P:
                      self.kmin_:self.kmax_+1].copy_(tmp_IC)
             del tmp_IC
 
-        # Update the overlap cells for the initial condition
+        # Update the initial condition in the overlap cells
         self.update_border()
     
         
