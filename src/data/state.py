@@ -36,12 +36,28 @@ import torch
 # CPU container for all state data
 # ----------------------------------------------------
 class data_all_CPU:
-    def __init__(self,geo,time,dt,names,state_data_all):
-
+    def __init__(self,decomp,time,dt,names,state_data_all):
+        self.device = decomp.device
+        
         # Global sizes
-        self.nx = geo.Nx
-        self.ny = geo.Ny
-        self.nz = geo.Nz
+        self.nx = decomp.nx
+        self.ny = decomp.ny
+        self.nz = decomp.nz
+
+        # Local sizes
+        self.nx_ = decomp.nx_
+        self.ny_ = decomp.ny_
+        self.nz_ = decomp.nz_
+
+        # Position in global grid
+        self.imin_loc = decomp.imin_loc; self.imax_loc = decomp.imax_loc
+        self.jmin_loc = decomp.jmin_loc; self.jmax_loc = decomp.jmax_loc
+        self.kmin_loc = decomp.kmin_loc; self.kmax_loc = decomp.kmax_loc
+
+        # Local indices
+        imin_ = decomp.imin_; imax_ = decomp.imax_+1
+        jmin_ = decomp.jmin_; jmax_ = decomp.jmax_+1
+        kmin_ = decomp.kmin_; kmax_ = decomp.kmax_+1
 
         # Time info
         self.time = time
@@ -57,12 +73,16 @@ class data_all_CPU:
 
         # State data
         self.data = []
-        imin_ = geo.imin_; imax_ = geo.imax_+1
-        jmin_ = geo.jmin_; jmax_ = geo.jmax_+1
-        kmin_ = geo.kmin_; kmax_ = geo.kmax_+1
         for state in state_data_all:
-            self.data.append(state.var[imin_:imax_,jmin_:jmax_,kmin_:kmax_]
-                             .to(torch.device('cpu')).numpy())
+            self.data.append(state.var[imin_:imax_,jmin_:jmax_,kmin_:kmax_])
+
+    def append(self,ivar,inData):
+        if (ivar<self.nvar):
+            self.data[ivar].copy_(torch.from_numpy(inData).to(self.device))
+
+    def read(self,ivar):
+        if (ivar<self.nvar):
+            return self.data[ivar].numpy()
 
 
 # ----------------------------------------------------
@@ -113,18 +133,13 @@ class state_P:
     
         
     def update_border(self):
-        
         # Update the overlap cells
         self.decomp.communicate_border(self.var)
-
-        # Periodic boundaries
-        #self.var[self.imino_:self.imin_,:,:] = self.var[self.imax_-self.nover+1:self.imax_+1,:,:]
-        #self.var[:,self.jmino_:self.jmin_,:] = self.var[:,self.jmax_-self.nover+1:self.jmax_+1,:]
-        #self.var[:,:,self.kmino_:self.kmin_] = self.var[:,:,self.kmax_-self.nover+1:self.kmax_+1]
         
-        #self.var[self.imax_+1:self.imaxo_+1,:,:] = self.var[self.imin_:self.imin_+self.nover,:,:]
-        #self.var[:,self.jmax_+1:self.jmaxo_+1,:] = self.var[:,self.jmin_:self.jmin_+self.nover,:]
-        #self.var[:,:,self.kmax_+1:self.kmaxo_+1] = self.var[:,:,self.kmin_:self.kmin_+self.nover]
+        
+    def update_border_i(self):
+        # Update the overlap cells for interpolated data
+        self.decomp.communicate_border(self.var_i)
         
             
     def ZAXPY(self,A,X,Y):

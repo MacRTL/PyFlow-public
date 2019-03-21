@@ -92,7 +92,7 @@ def readNGAconfig(fName):
         # Read the mask - NOT IMPLEMENTED
         
         # Print some file info
-        if (True):
+        if (MPI.COMM_WORLD.Get_rank()==0):
             print(' ')
             print(' --> Importing grid data from NGA config file')
             print('   Config file name:   {}'.format(fName))
@@ -116,7 +116,7 @@ def readNGAconfig(fName):
 # --------------------------------------------------------
 # Read state data from a RESTART format data file
 # --------------------------------------------------------    
-def readNGArestart(fName,readData=True):
+def readNGArestart(fName,headerOnly=True):
 
     with open(fName, 'rb') as f:
         # Read data sizes
@@ -141,7 +141,7 @@ def readNGArestart(fName,readData=True):
                     names[ivar] += s.decode('UTF-8')
         
         # Print some file info
-        if (True):
+        if (MPI.COMM_WORLD.Get_rank()==0):
             print(' ')
             print(' --> Importing state data from NGA restart file')
             print('   Data file name:    {}'.format(fName))
@@ -150,7 +150,7 @@ def readNGArestart(fName,readData=True):
             print('   Number of vars:    {}'.format(nvar))
             print('   Variables in file: {}'.format(names))
             
-        if readData:
+        if (not headerOnly):
             # Read data arrays in serial and return the output
             nread = nvar
             #nread = min([31,nvar])
@@ -166,7 +166,7 @@ def readNGArestart(fName,readData=True):
         else:
             # Just return the grid info and variable names
             # Need to call readNGA_parallel to get data
-            return(names)
+            return(names,time)
 
 
 
@@ -205,6 +205,182 @@ def writeNGArestart(fName,Data,headerOnly=True):
             print('  --> Wrote data file')
 
     return
+    
+
+
+# --------------------------------------------------------
+# Read data from a restart format file in parallel
+# --------------------------------------------------------
+def readNGArestart_parallel(fName,data,ivar_read_start=None,nvar_read=None):
+
+    # Get MPI decomposition info
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    size = comm.Get_size()
+
+    # MPI data sizes
+    nx_MOK = data.nx
+    ny_MOK = data.ny
+    nz_MOK = data.nz
+    NVARS_MOK = data.nvar
+    WP_MOK  = 8
+    str_MOK = 8
+
+    # Cartesian decomposition
+    gsizes = [data.nx,  data.ny,  data.nz ]
+    lsizes = [data.nx_, data.ny_, data.nz_]
+    start  = [data.imin_loc, data.jmin_loc, data.kmin_loc]
+
+    #print("gsizes=[{}, {}, {}]".format(data.nx,data.ny,data.nz))
+    #print("lsizes=[{}, {}, {}]".format(data.nx_,data.ny_,data.nz_))
+    #print("start =[{}, {}, {}]".format(data.imin_,data.jmin_,data.kmin_))
+
+    # Open the file
+    amode = MPI.MODE_RDONLY
+    fh = MPI.File.Open(comm,fName,amode)
+    
+    # Create the subarray
+    subData = MPI.DOUBLE.Create_subarray(
+        gsizes, lsizes, start, order=MPI.ORDER_FORTRAN)
+    subData.Commit()
+
+    # Allocate the buffer to read
+    readBuffer = np.empty(data.nx_*data.ny_*data.nz_, dtype='float64')
+
+    # Reset the data structure's variable counter to zero
+    data.ivar = 0
+        
+    # Decide how much data to read
+    #  --> Be careful with options 2-4, as data.ivar is automatically
+    #      reset to zero. Useful to reading one variable at a time, but
+    #      potentially catastrophic if the entire dataset is necessary.
+    if (ivar_read_start==None and nvar_read==None):
+        # Read all the data
+        ivar_start = 0
+        ivar_end   = data.nvar
+    elif (ivar_read_start==None):
+        # Read a fixed number of fields starting from zero
+        ivar_start = 0
+        ivar_end   = nvar_read
+    elif (nvar_read==None):
+        # Read all the data starting from ivar_read_start
+        ivar_start = ivar_read_start
+        ivar_end   = data.nvar
+    else:
+        # Read just the specified data range
+        ivar_start = ivar_read_start
+        ivar_end   = ivar_read_start+nvar_read
+
+    for ivar in range(ivar_start,ivar_end):
+        # Set the file view
+        var_MOK = ivar
+        disp = ( 4*4 + NVARS_MOK*str_MOK + 2*WP_MOK
+                 + nx_MOK*ny_MOK*nz_MOK*var_MOK*WP_MOK )
+        fh.Set_view(disp, filetype=subData)
+        
+        # Read the file
+        fh.Read_all(readBuffer)
+
+        #print("irank={} ivar={} min={} max={}".format(rank,ivar,np.min(readBuffer),np.max(readBuffer)))
+
+        # Copy the variable to the data buffer
+        data.append(ivar,readBuffer.reshape((data.nx_,data.ny_,data.nz_),order='F'))
+        
+        #print("irank={} read ivar={}".format(rank,ivar))
+
+    # Close and return
+    subData.Free()
+    del subData
+    del readBuffer
+    fh.Close()
+
+    return  
+
+
+# --------------------------------------------------------
+# Write data to a restart format file in parallel
+# --------------------------------------------------------
+def writeNGArestart_parallel(fName,data,ivar_write_start=None,nvar_write=None):
+
+    # Get MPI decomposition info
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    size = comm.Get_size()
+
+    # MPI data sizes
+    nx_MOK = data.nx
+    ny_MOK = data.ny
+    nz_MOK = data.nz
+    NVARS_MOK = data.nvar
+    WP_MOK  = 8
+    str_MOK = 8
+
+    # Cartesian decomposition
+    gsizes = [data.nx,  data.ny,  data.nz ]
+    lsizes = [data.nx_, data.ny_, data.nz_]
+    start  = [data.imin_loc, data.jmin_loc, data.kmin_loc]
+
+    # Open the file
+    amode = MPI.MODE_WRONLY
+    fh = MPI.File.Open(comm,fName,amode)
+    
+    # Create the subarray
+    subData = MPI.DOUBLE.Create_subarray(
+        gsizes, lsizes, start, order=MPI.ORDER_FORTRAN)
+    subData.Commit()
+
+    # Allocate the buffer to write
+    writeBuffer = np.empty(data.nx_*data.ny_*data.nz_, dtype='float64')
+
+    # Decide how much data to write
+    if (ivar_write_start==None and nvar_write==None):
+        # Write all the data
+        ivar_start = 0
+        ivar_end   = data.nvar
+    elif (ivar_write_start==None):
+        # Write a fixed number of fields starting from zero
+        ivar_start = 0
+        ivar_end   = nvar_write
+    elif (nvar_write==None):
+        # Write all the data starting from ivar_write_start
+        ivar_start = ivar_write_start
+        ivar_end   = data.nvar
+    else:
+        # Write just the specified data range
+        ivar_start = ivar_write_start
+        ivar_end   = ivar_write_start+nvar_write
+
+    # Offset for position in data.data
+    ivar_offs = ivar_start
+    
+    for ivar in range(ivar_start,ivar_end):
+        # Set the file view
+        var_MOK = ivar
+        disp = ( 4*4 + NVARS_MOK*str_MOK + 2*WP_MOK
+                 + nx_MOK*ny_MOK*nz_MOK*var_MOK*WP_MOK )
+        fh.Set_view(disp, filetype=subData)
+
+        # Fill the buffer
+        writeBuffer = data.read(ivar-ivar_offs).reshape(
+            data.nx_*data.ny_*data.nz_,order='F').astype('float64')
+
+        #print("irank={} ivar={} min={} max={}".format(
+        #    rank,ivar,np.min(writeBuffer),np.max(writeBuffer)))
+        
+        # Write to the file
+        fh.Write_all(writeBuffer)
+        
+        #print("irank={} wrote ivar={}".format(rank,ivar))
+
+    # Close and return
+    subData.Free()
+    del subData
+    del writeBuffer
+    fh.Close()
+
+    return
+
+
 
 
 # --------------------------------------------------------

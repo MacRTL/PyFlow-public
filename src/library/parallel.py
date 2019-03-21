@@ -33,7 +33,69 @@ import numpy as np
 import torch
 from mpi4py import MPI
 
+   
+# ----------------------------------------------------
+# Parallel communication functions
+# ----------------------------------------------------
+class comms:
+    def __init__(self):
+        # Get MPI decomposition info
+        self.comm = MPI.COMM_WORLD
+        self.rank = self.comm.Get_rank()
+        self.size = self.comm.Get_size()
 
+    def parallel_sum(self,sendBuf,type=np.float32):
+        if (self.size>1):
+            if (hasattr(sendBuf,"__size__")):
+                sendLen = len(sendBuf)
+            else:
+                sendLen = 1
+            recvBuf = np.zeros(sendLen, dtype=type)
+            self.comm.Allreduce(sendBuf,recvBuf,op=MPI.SUM)
+            if (sendLen==1):
+                out = recvBuf[0]
+            else:
+                out = recvBuf
+        else:
+            # Serial computation; nothing to do
+            out = sendBuf
+        return out
+
+    def parallel_max(self,sendBuf,type=np.float32):
+        if (self.size>1):
+            if (hasattr(sendBuf,"__size__")):
+                sendLen = len(sendBuf)
+            else:
+                sendLen = 1
+            recvBuf = np.zeros(sendLen, dtype=type)
+            self.comm.Allreduce(sendBuf,recvBuf,op=MPI.MAX)
+            if (sendLen==1):
+                out = recvBuf[0]
+            else:
+                out = recvBuf
+        else:
+            # Serial computation; nothing to do
+            out = sendBuf
+        return out
+
+    def parallel_min(self,sendBuf,type=np.float32):
+        if (self.size>1):
+            if (hasattr(sendBuf,"__size__")):
+                sendLen = len(sendBuf)
+            else:
+                sendLen = 1
+            recvBuf = np.zeros(sendLen, dtype=type)
+            self.comm.Allreduce(sendBuf,recvBuf,op=MPI.MIN)
+            if (sendLen==1):
+                out = recvBuf[0]
+            else:
+                out = recvBuf
+        else:
+            # Serial computation; nothing to do
+            out = sendBuf
+        return out
+
+    
 # ----------------------------------------------------
 # MPI decomposition
 # ----------------------------------------------------
@@ -58,6 +120,10 @@ class decomp:
         self.npx = nproc_decomp[0]
         self.npy = nproc_decomp[1]
         self.npz = nproc_decomp[2]
+        
+        # Check the decomp
+        if (self.size!=self.npx*self.npy*self.npz):
+            raise Exception('\nNumber of MPI tasks does not match the specified domain decomposition\n')
         
         #npy = int(np.floor(np.sqrt(self.size)))
         #npx = size//npy
@@ -221,7 +287,7 @@ class decomp:
 
         # Copy the received left buffer to the right overlap cells
         if (isource!=MPI.PROC_NULL):
-            A[n1-no:n1,:,:] = torch.from_numpy(recvbuf).to(self.device)
+            A[n1-no:n1,:,:].copy_(torch.from_numpy(recvbuf).to(self.device))
 
         # Right buffer
         sendbuf = A[n1-2*no:n1-no,:,:].to(torch.device('cpu')).numpy()
@@ -232,7 +298,7 @@ class decomp:
 
         # Copy the received right buffer to the left overlap cells
         if (isource!=MPI.PROC_NULL):
-            A[0:no,:,:] = torch.from_numpy(recvbuf).to(self.device)
+            A[0:no,:,:].copy_(torch.from_numpy(recvbuf).to(self.device))
 
         # Clean up
         del recvbuf
@@ -308,3 +374,47 @@ class decomp:
         # Clean up
         del sendbuf
         del recvbuf
+
+        
+    # --------------------------------------------
+    # Plot a 2D figure from the root processor
+    #   Currently only set up for npx=2 or npy=2
+    def plot_fig_root(self,dr,A,outname):
+        no = self.nover
+        n1 = self.nx_
+        n2 = self.ny_
+        k  = int(self.nz/2)
+        
+        # Initialize buffers
+        sendbuf = np.empty([n1,n2],dtype=self.dtypeNumpy)
+        recvbuf = np.empty([n1,n2],dtype=self.dtypeNumpy)
+        icount = n1*n2
+        
+        # Root processor output buffer
+        if (self.rank==0):
+            outbuf = np.empty([self.nx,self.ny],dtype=self.dtypeNumpy)
+            outbuf[:n1,:n2] = np.copy(A[no:-no,no:-no,k].to(torch.device('cpu')).numpy())
+
+        # Grab from x-proc
+        if (self.npx>1):
+            sendbuf = np.copy(A[no:-no,no:-no,k].to(torch.device('cpu')).numpy())
+            isource,idest = self.cartComm.Shift(0,+1)
+            self.cartComm.Sendrecv(sendbuf,idest,0,recvbuf,isource,0)
+
+            # Copy to output buffer
+            if (self.rank==0):
+                outbuf[n1:,:n2] = recvbuf
+
+        # Grab from y-proc
+        if (self.npy>1):
+            sendbuf = np.copy(A[no:-no,no:-no,k].to(torch.device('cpu')).numpy())
+            isource,idest = self.cartComm.Shift(1,+1)
+            self.cartComm.Sendrecv(sendbuf,idest,0,recvbuf,isource,0)
+
+            # Copy to output buffer
+            if (self.rank==0):
+                outbuf[:n1,n2:] = recvbuf
+
+        # Plot it
+        if (self.rank==0):
+            dr.plotData(outbuf,outname)

@@ -83,17 +83,17 @@ import sfsmodel_smagorinsky
 
 # Simulation geometry
 #   Options: restart, periodicGaussian, uniform, notAchannel
-#configName = "restart"
-configName = "periodicGaussian"
+configName = "restart"
+#configName = "periodicGaussian"
 #configName = "uniform"
 #configName = "notAchannel"
-configNx   = 64
-configNy   = 64
-configNz   = 64
-configLx   = 1.0
-configLy   = 1.0
-configLz   = 1.0
-isper = [1,1,1]
+#configNx   = 64
+#configNy   = 64
+#configNz   = 64
+#configLx   = 1.0
+#configLy   = 1.0
+#configLz   = 1.0
+#isper = [1,1,1]
 
 # Data and config files to read
 if (configName=='restart'):
@@ -102,11 +102,12 @@ if (configName=='restart'):
     
     configFileStr = '../../examples/config_dnsbox_128_Lx0.0056'
     dataFileStr   = '../../examples/data_dnsbox_128_Lx0.0056.1_2.50000E-04'
+    #dataFileStr = 'data_dnsbox_128_Lx0.0056.PF_2.5000000E-04'
     dataFileType  = 'restart'
 
 # Data file to write
 fNameOut     = 'data_dnsbox_128_Lx0.0056.PF'
-numItDataOut = 500
+numItDataOut = 50
 
 # Parallel decomposition
 nproc_x = 2
@@ -119,7 +120,7 @@ rho = 1.2
 
 # Time step info
 simDt        = 2.5e-6
-numIt        = 20
+numIt        = 500
 startTime    = 0.0
 
 # SFS model
@@ -142,7 +143,7 @@ Num_pressure_iterations = 800
 
 # Output options
 plotState    = True
-numItPlotOut = 50
+numItPlotOut = 20
 
 # Comparison options
 useTargetData = False
@@ -162,14 +163,34 @@ device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     
 # ----------------------------------------------------
-# Configure parallel decomposition
+# Configure simulation domain
 # ----------------------------------------------------
+# Basic parallel operations
+comms = parallel.comms()
+
+# Domain sizes if performing a restart
+if (configName=='restart'):
+    if (dataFileType=='restart'):
+        # Read grid data from an NGA config file
+        xGrid,yGrid,zGrid,xper,yper,zper = dr.readNGAconfig(configFileStr)
+        configNx = len(xGrid)-1
+        configNy = len(yGrid)-1
+        configNz = len(zGrid)-1
+        isper = [xper,yper,zper]
+
+    elif (dataFileType=='volume'):
+        # Read grid and state data from a volume-format file
+        xGrid,yGrid,zGrid,names,dataTime,data = dr.readNGA(dataFileStr)
+        configNx = len(xGrid)
+        configNy = len(yGrid)
+        configNz = len(zGrid)
+
+# Domain decomposition
 nproc  = [nproc_x,nproc_y,nproc_z]
 decomp = parallel.decomp(configNx,configNy,configNz,nproc,isper,device,precision)
 
-# Check the decomp
-if (decomp.size!=nproc_x*nproc_y*nproc_z):
-    raise Exception('\nNumber of MPI tasks does not match the specified domain decomposition\n')
+if ((nproc_x>1 and nproc_y>1) or (nproc_z>1)):
+    plotState = False
 
 # Local grid sizes
 nx_ = decomp.nx_
@@ -196,17 +217,8 @@ names = ['U','V','W','P']
 # Process initial condition type
 if (configName=='restart'):
     if (dataFileType=='restart'):
-        # Read grid data from an NGA config file
-        xGrid,yGrid,zGrid,xper,yper,zper = dr.readNGAconfig(configFileStr)
-        configNx = len(xGrid)-1
-        configNy = len(yGrid)-1
-        configNz = len(zGrid)-1
-        isper = [xper,yper,zper]
-
-        # BCAST these from rank=0
-        
-        # Read state data from an NGA restart file
-        names,startTime,data = dr.readNGArestart(dataFileStr)
+        # Read state information from an NGA restart file
+        names,startTime = dr.readNGArestart(dataFileStr)
 
     elif (dataFileType=='volume'):
         # Read grid and state data from a volume-format file
@@ -219,11 +231,8 @@ if (configName=='restart'):
         # [JFM] NEED TO IMPLEMENT
         # Need periodicity information
 
-    # Extract the initial conditions
-    data_IC = data[:,:,:,0:4]
-    
-    # Clean up
-    del data
+    # Read restart data later
+    data_IC = np.zeros((nx_,ny_,nz_,4),dtype='float64')
     
 elif (configName=='periodicGaussian'):
     # Initialize the uniform grid
@@ -355,7 +364,7 @@ state_pOld_P = state.state_P(decomp,IC_p_np)
 # Set up a Numpy mirror to the PyTorch state
 #  --> Used for file I/O
 state_data_all = (state_u_P, state_v_P, state_w_P, state_p_P)
-data_all_CPU   = state.data_all_CPU(geometry,startTime,simDt,names,state_data_all)
+data_all_CPU   = state.data_all_CPU(decomp,startTime,simDt,names,state_data_all)
 
 # Need a temporary velocity state for RK solvers
 if (solverName[:-1]=="RK"):
@@ -385,22 +394,22 @@ if (use_SFSmodel):
 if (equationMode=='scalar'):
     if (decomp.rank==0):
         print("\nSolving scalar advection-diffusion equation")
-    rhs1 = velocity.rhs_scalar(geometry,uMax,vMax,wMax)
+    rhs1 = velocity.rhs_scalar(decomp,uMax,vMax,wMax)
     if (solverName[:-1]=="RK"):
-        rhs2 = velocity.rhs_scalar(geometry,uMax,vMax,wMax)
-        rhs3 = velocity.rhs_scalar(geometry,uMax,vMax,wMax)
-        rhs4 = velocity.rhs_scalar(geometry,uMax,vMax,wMax)
+        rhs2 = velocity.rhs_scalar(decomp,uMax,vMax,wMax)
+        rhs3 = velocity.rhs_scalar(decomp,uMax,vMax,wMax)
+        rhs4 = velocity.rhs_scalar(decomp,uMax,vMax,wMax)
         
 elif (equationMode=='NS'):
     if (decomp.rank==0):
         print("\nSolving Navier-Stokes equations")
         print("Solver settings: advancer={}, pressure={}".format(solverName,pSolverMode))
     
-    rhs1 = velocity.rhs_NavierStokes(geometry)
+    rhs1 = velocity.rhs_NavierStokes(decomp)
     if (solverName[:-1]=="RK"):
-        rhs2 = velocity.rhs_NavierStokes(geometry)
-        rhs3 = velocity.rhs_NavierStokes(geometry)
-        rhs4 = velocity.rhs_NavierStokes(geometry)
+        rhs2 = velocity.rhs_NavierStokes(decomp)
+        rhs3 = velocity.rhs_NavierStokes(decomp)
+        rhs4 = velocity.rhs_NavierStokes(decomp)
         
     # Pressure solver
     if (pSolverMode=='Jacobi'):
@@ -423,6 +432,11 @@ del IC_w_np
 del IC_p_np
 del IC_zeros_np
 del data_IC
+
+# Read restart state data in parallel
+if (configName=='restart'):
+    if (dataFileType=='restart'):
+        dr.readNGArestart_parallel(dataFileStr,data_all_CPU)
 
 
 # ----------------------------------------------------
@@ -459,27 +473,26 @@ for iterations in range(1):
 
     # Write the initial data file
     timeStr = "{:12.7E}".format(simTime)
-    #dr.writeNGArestart(fNameOut+'_'+timeStr,data_all_CPU,False)
-    
-    # Write initial condition stats - JFM make this parallel max
-    maxU = torch.max(state_u_P.var)
-    maxV = torch.max(state_v_P.var)
-    maxW = torch.max(state_w_P.var)
-    maxCFL = max((maxU/geometry.dx,maxV/geometry.dy,maxW/geometry.dz))*simDt
     if (decomp.rank==0):
+        dr.writeNGArestart(fNameOut+'_'+timeStr,data_all_CPU,True)
+    dr.writeNGArestart_parallel(fNameOut+'_'+timeStr,data_all_CPU)
+    
+    # Write initial condition stats
+    maxU = comms.parallel_max(torch.max(state_u_P.var).numpy())
+    maxV = comms.parallel_max(torch.max(state_v_P.var).numpy())
+    maxW = comms.parallel_max(torch.max(state_w_P.var).numpy())
+    if (decomp.rank==0):
+        maxCFL = max((maxU/geometry.dx,maxV/geometry.dy,maxW/geometry.dz))*simDt
         lineStr = "  {:10d}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}"
         print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW))
 
     if (plotState):
-        timeStr = "{:12.7E}".format(simTime)
+        timeStr = "{:12.7E}_{}".format(simTime,decomp.rank)
         # Plot the initial state
-        dr.plotData(state_u_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_U_"+str(itCount)+"_"+timeStr)
-        dr.plotData(state_v_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_V_"+str(itCount)+"_"+timeStr)
-        dr.plotData(state_w_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_W_"+str(itCount)+"_"+timeStr)
-        dr.plotData(state_p_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_p_"+str(itCount)+"_"+timeStr)
+        decomp.plot_fig_root(dr,state_u_P.var,"state_U_"+str(itCount)+"_"+timeStr)
 
     # Compute the initial energy
-    initEnergy = torch.sum(state_u_P.var**2 + state_v_P.var**2 + state_w_P.var**2)
+    initEnergy = comms.parallel_sum(torch.sum(state_u_P.var**2 + state_v_P.var**2 + state_w_P.var**2).numpy())
     
     # Main iteration loop
     while (simTime < stopTime):
@@ -569,13 +582,13 @@ for iterations in range(1):
             metric.div_vel(state_u_P,state_v_P,state_w_P,source_P)
             
             # Integral of the Poisson eqn RHS
-            int_RP = torch.sum(source_P)
+            int_RP = comms.parallel_sum(torch.sum(source_P).numpy())
 
             # Solve the Poisson equation
             poisson.solve(state_pOld_P,state_p_P,source_P)
                 
             # Max pressure residual
-            max_res_P = torch.max(torch.abs(state_p_P.var - state_pOld_P.var))
+            max_res_P = comms.parallel_max(torch.max(torch.abs(state_p_P.var - state_pOld_P.var)).numpy())
 
         
             # ----------------------------------------------------
@@ -599,9 +612,9 @@ for iterations in range(1):
         # Post-step
         # ----------------------------------------------------
         # Compute stats
-        maxU = torch.max(state_u_P.var)
-        maxV = torch.max(state_v_P.var)
-        maxW = torch.max(state_w_P.var)
+        maxU = comms.parallel_max(torch.max(state_u_P.var).numpy())
+        maxV = comms.parallel_max(torch.max(state_v_P.var).numpy())
+        maxW = comms.parallel_max(torch.max(state_w_P.var).numpy())
         maxCFL = max((maxU/geometry.dx,maxV/geometry.dy,maxW/geometry.dz))*simDt
 
         # Update the time
@@ -624,14 +637,13 @@ for iterations in range(1):
             data_all_CPU.time = simTime
             data_all_CPU.dt   = simDt
             timeStr = "{:12.7E}".format(simTime)
-            #dr.writeNGArestart(fNameOut+'_'+timeStr,data_all_CPU,False)
+            if (decomp.rank==0):
+                dr.writeNGArestart(fNameOut+'_'+timeStr,data_all_CPU,True)
+            dr.writeNGArestart_parallel(fNameOut+'_'+timeStr,data_all_CPU)
 
         if (plotState and np.mod(itCount,numItPlotOut)==0):
-            timeStr = "{:12.7E}".format(simTime)
-            dr.plotData(state_u_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_U_"+str(itCount)+"_"+timeStr)
-            dr.plotData(state_v_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_V_"+str(itCount)+"_"+timeStr)
-            dr.plotData(state_w_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_W_"+str(itCount)+"_"+timeStr)
-            dr.plotData(state_p_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_p_"+str(itCount)+"_"+timeStr)
+            timeStr = "{:12.7E}_{}".format(simTime,decomp.rank)
+            decomp.plot_fig_root(dr,state_u_P.var,"state_U_"+str(itCount)+"_"+timeStr)
 
         ## END OF ITERATION LOOP
 
@@ -647,7 +659,9 @@ for iterations in range(1):
     data_all_CPU.time = simTime
     data_all_CPU.dt   = simDt
     timeStr = "{:12.7E}".format(simTime)
-    #dr.writeNGArestart(fNameOut+'_'+timeStr,data_all_CPU,False)
+    if (decomp.rank==0):
+        dr.writeNGArestart(fNameOut+'_'+timeStr,data_all_CPU,True)
+    dr.writeNGArestart_parallel(fNameOut+'_'+timeStr,data_all_CPU)
             
     #Diff = state_u_P.var - Variable( torch.FloatTensor( np.matrix( u_DNS_downsamples[T_factor*(i+1)]).T ) )
     if (useTargetData):
@@ -664,7 +678,7 @@ for iterations in range(1):
     test = torch.mean( state_u_P.var)
         
     # Compute the final energy
-    finalEnergy = torch.sum(state_u_P.var**2 + state_v_P.var**2 + state_w_P.var**2)
+    finalEnergy = comms.parallel_sum(torch.sum(state_u_P.var**2 + state_v_P.var**2 + state_w_P.var**2).numpy())
     
     if (useTargetData):
         if (decomp.rank==0):
@@ -674,10 +688,7 @@ for iterations in range(1):
             print("it={}, test={}, elapsed={}, energy final/initial={}".format(iterations,test,time_elapsed,
                                                                            finalEnergy/initEnergy))
 
-    if (plotState and decomp.rank==0):
+    if (plotState):
         # Print a pretty picture
-        timeStr = "{:12.7E}".format(simTime)
-        dr.plotData(state_u_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_U_"+str(itCount)+"_"+timeStr)
-        dr.plotData(state_v_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_V_"+str(itCount)+"_"+timeStr)
-        dr.plotData(state_w_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_W_"+str(itCount)+"_"+timeStr)
-        dr.plotData(state_p_P.var[:,:,int(geometry.Nz/2)].cpu().numpy(),"state_p_"+str(itCount)+"_"+timeStr)
+        timeStr = "{:12.7E}_{}".format(simTime,decomp.rank)
+        decomp.plot_fig_root(dr,state_u_P.var,"state_U_"+str(itCount)+"_"+timeStr)
