@@ -75,6 +75,8 @@ class solver_jacobi:
                                -state_pOld_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_+1:kmax_+2]
                                -state_pOld_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_-1:kmax_  ]
                                +source_P )*DInv)
+
+            # Red/black GS/SOR?
             
 
 class solver_bicgstab_serial:

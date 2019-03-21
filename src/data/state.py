@@ -69,37 +69,37 @@ class data_all_CPU:
 # Base class for state data
 # ----------------------------------------------------
 class state_P:
-    def __init__(self,geo,IC=None):
+    def __init__(self,decomp,IC=None):
         # Defaults: zero initial conditions
 
-        # Save a pointer to the geometry object
-        self.geo = geo
-        prec = geo.prec
+        # Save a pointer to the decomposition object
+        self.decomp = decomp
+        prec = decomp.prec
 
         # Data sizes
-        nx_  = geo.nx_
-        ny_  = geo.ny_
-        nz_  = geo.nz_
-        nxo_ = geo.nxo_
-        nyo_ = geo.nyo_
-        nzo_ = geo.nzo_
-        self.nover  = geo.nover
-        self.imin_  = geo.imin_;  self.imax_  = geo.imax_
-        self.jmin_  = geo.jmin_;  self.jmax_  = geo.jmax_
-        self.kmin_  = geo.kmin_;  self.kmax_  = geo.kmax_
-        self.imino_ = geo.imino_; self.imaxo_ = geo.imaxo_
-        self.jmino_ = geo.jmino_; self.jmaxo_ = geo.jmaxo_
-        self.kmino_ = geo.kmino_; self.kmaxo_ = geo.kmaxo_
+        nx_  = decomp.nx_
+        ny_  = decomp.ny_
+        nz_  = decomp.nz_
+        nxo_ = decomp.nxo_
+        nyo_ = decomp.nyo_
+        nzo_ = decomp.nzo_
+        self.nover  = decomp.nover
+        self.imin_  = decomp.imin_;  self.imax_  = decomp.imax_
+        self.jmin_  = decomp.jmin_;  self.jmax_  = decomp.jmax_
+        self.kmin_  = decomp.kmin_;  self.kmax_  = decomp.kmax_
+        self.imino_ = decomp.imino_; self.imaxo_ = decomp.imaxo_
+        self.jmino_ = decomp.jmino_; self.jmaxo_ = decomp.jmaxo_
+        self.kmino_ = decomp.kmino_; self.kmaxo_ = decomp.kmaxo_
         
         # Allocate data arrays
         # State data
-        self.var      = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(geo.device)
+        self.var      = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(decomp.device)
         # Interpolated state data
-        self.var_i    = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(geo.device)
+        self.var_i    = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(decomp.device)
         # First derivatives
-        self.grad_x   = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(geo.device)
-        self.grad_y   = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(geo.device)
-        self.grad_z   = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(geo.device)
+        self.grad_x   = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(decomp.device)
+        self.grad_y   = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(decomp.device)
+        self.grad_z   = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(decomp.device)
 
         # Copy initial conditions into the data tensor
         if (IC.any()):
@@ -113,17 +113,18 @@ class state_P:
     
         
     def update_border(self):
-        # Update the class data's overlap cells
-        # MPI decomp goes here
+        
+        # Update the overlap cells
+        self.decomp.communicate_border(self.var)
 
         # Periodic boundaries
-        self.var[self.imino_:self.imin_,:,:] = self.var[self.imax_-self.nover+1:self.imax_+1,:,:]
-        self.var[:,self.jmino_:self.jmin_,:] = self.var[:,self.jmax_-self.nover+1:self.jmax_+1,:]
-        self.var[:,:,self.kmino_:self.kmin_] = self.var[:,:,self.kmax_-self.nover+1:self.kmax_+1]
+        #self.var[self.imino_:self.imin_,:,:] = self.var[self.imax_-self.nover+1:self.imax_+1,:,:]
+        #self.var[:,self.jmino_:self.jmin_,:] = self.var[:,self.jmax_-self.nover+1:self.jmax_+1,:]
+        #self.var[:,:,self.kmino_:self.kmin_] = self.var[:,:,self.kmax_-self.nover+1:self.kmax_+1]
         
-        self.var[self.imax_+1:self.imaxo_+1,:,:] = self.var[self.imin_:self.imin_+self.nover,:,:]
-        self.var[:,self.jmax_+1:self.jmaxo_+1,:] = self.var[:,self.jmin_:self.jmin_+self.nover,:]
-        self.var[:,:,self.kmax_+1:self.kmaxo_+1] = self.var[:,:,self.kmin_:self.kmin_+self.nover]
+        #self.var[self.imax_+1:self.imaxo_+1,:,:] = self.var[self.imin_:self.imin_+self.nover,:,:]
+        #self.var[:,self.jmax_+1:self.jmaxo_+1,:] = self.var[:,self.jmin_:self.jmin_+self.nover,:]
+        #self.var[:,:,self.kmax_+1:self.kmaxo_+1] = self.var[:,:,self.kmin_:self.kmin_+self.nover]
         
             
     def ZAXPY(self,A,X,Y):

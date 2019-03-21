@@ -49,6 +49,9 @@ import state
 import dataReader as dr
 import constants as const
 #
+sys.path.append("../library")
+import parallel
+#
 sys.path.append("../geometry")
 import geometry as geo
 #
@@ -75,6 +78,8 @@ import sfsmodel_smagorinsky
 # ----------------------------------------------------
 # User-specified parameters
 # ----------------------------------------------------
+
+# [JFM] move this to an input file passed as a command-line arg
 
 # Simulation geometry
 #   Options: restart, periodicGaussian, uniform, notAchannel
@@ -104,7 +109,7 @@ fNameOut     = 'data_dnsbox_128_Lx0.0056.PF'
 numItDataOut = 500
 
 # Parallel decomposition
-nproc_x = 1
+nproc_x = 2
 nproc_y = 1
 nproc_z = 1
 
@@ -114,7 +119,7 @@ rho = 1.2
 
 # Time step info
 simDt        = 2.5e-6
-numIt        = 10
+numIt        = 20
 startTime    = 0.0
 
 # SFS model
@@ -160,11 +165,11 @@ device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 # Configure parallel decomposition
 # ----------------------------------------------------
 nproc  = [nproc_x,nproc_y,nproc_z]
-decomp = geo.decomp(configNx,configNy,configNz,nproc,isper)
+decomp = parallel.decomp(configNx,configNy,configNz,nproc,isper,device,precision)
 
 # Check the decomp
 if (decomp.size!=nproc_x*nproc_y*nproc_z):
-    raise Exception('\nNumber of processors does not match specified domain decomposition\n')
+    raise Exception('\nNumber of MPI tasks does not match the specified domain decomposition\n')
 
 # Local grid sizes
 nx_ = decomp.nx_
@@ -341,11 +346,11 @@ model_name = 'LES_model_NR_March2019'
 # ----------------------------------------------------
 
 # Allocate state data using PyTorch variables
-state_u_P = state.state_P(geometry,IC_u_np)
-state_v_P = state.state_P(geometry,IC_v_np)
-state_w_P = state.state_P(geometry,IC_w_np)
-state_p_P = state.state_P(geometry,IC_p_np)
-state_pOld_P = state.state_P(geometry,IC_p_np)
+state_u_P = state.state_P(decomp,IC_u_np)
+state_v_P = state.state_P(decomp,IC_v_np)
+state_w_P = state.state_P(decomp,IC_w_np)
+state_p_P = state.state_P(decomp,IC_p_np)
+state_pOld_P = state.state_P(decomp,IC_p_np)
 
 # Set up a Numpy mirror to the PyTorch state
 #  --> Used for file I/O
@@ -354,9 +359,9 @@ data_all_CPU   = state.data_all_CPU(geometry,startTime,simDt,names,state_data_al
 
 # Need a temporary velocity state for RK solvers
 if (solverName[:-1]=="RK"):
-    state_uTmp_P = state.state_P(geometry,IC_u_np)
-    state_vTmp_P = state.state_P(geometry,IC_v_np)
-    state_wTmp_P = state.state_P(geometry,IC_w_np)
+    state_uTmp_P = state.state_P(decomp,IC_u_np)
+    state_vTmp_P = state.state_P(decomp,IC_v_np)
+    state_wTmp_P = state.state_P(decomp,IC_w_np)
 
 # Allocate workspace arrays
 source_P = torch.zeros(nx_,ny_,nz_,dtype=precision).to(device)
