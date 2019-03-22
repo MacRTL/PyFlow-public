@@ -65,6 +65,7 @@ import pressure
 sys.path.append("../sfsmodel")
 import sfsmodel_nn
 import sfsmodel_smagorinsky
+import sfsmodel_gradient
 
 
 ####### TODO
@@ -100,17 +101,22 @@ if (configName=='restart'):
     #dataFileStr = '../../examples/filtered_vol_dnsbox_1024_Lx0.045_NR_00000020_coarse'
     #dataFileType = 'volume'
     
-    configFileStr = '../../examples/config_dnsbox_128_Lx0.0056'
-    dataFileStr   = '../../examples/data_dnsbox_128_Lx0.0056.1_2.50000E-04'
-    #dataFileStr = 'data_dnsbox_128_Lx0.0056.PF_2.5000000E-04'
+    #configFileStr = '../../examples/config_dnsbox_128_Lx0.0056'
+    #dataFileStr   = '../../examples/data_dnsbox_128_Lx0.0056.1_2.50000E-04'
+    #dataFileStr = 'data_dnsbox_128_Lx0.0056.PF_1.2500000E-03'
+    #dataFileType  = 'restart'
+
+    # Downsampled 1024^3 DNS
+    configFileStr = '../../input/restart_1024_Lx0.045_NR_Delta16_Down16/config_dnsbox_1024_Lx0.045_NR_Delta16_Down16_0000'
+    dataFileStr   = '../../input/restart_1024_Lx0.045_NR_Delta16_Down16/dnsbox_1024_Lx0.045_NR_Delta16_Down16_00000020'
     dataFileType  = 'restart'
 
 # Data file to write
-fNameOut     = 'data_dnsbox_128_Lx0.0056.PF'
+fNameOut     = 'dnsbox_1024_Lx0.045_NR_Delta16_Down16_00000020'
 numItDataOut = 50
 
 # Parallel decomposition
-nproc_x = 2
+nproc_x = 1
 nproc_y = 1
 nproc_z = 1
 
@@ -119,13 +125,15 @@ mu  = 1.8678e-5
 rho = 1.2
 
 # Time step info
-simDt        = 2.5e-6
+simDt        = 5e-6
 numIt        = 500
 startTime    = 0.0
 
 # SFS model
-#   SFSmodel options: none, Smagorinsky, nn
-SFSmodel = 'none' #'Smagorinsky'
+#   SFSmodel options: none, Smagorinsky, gradient, nn
+#SFSmodel = 'none'
+#SFSmodel = 'Smagorinsky'
+SFSmodel = 'gradient'
 
 # Solver settings
 #   solverName options:   Euler, RK4
@@ -136,10 +144,10 @@ solverName   = "RK4"
 equationMode = "NS"
 genericOrder = 2
 precision    = torch.float32
-pSolverMode  = "Jacobi"
-Num_pressure_iterations = 800
-#pSolverMode  = "bicgstab"
-#Num_pressure_iterations = 300
+#pSolverMode  = "Jacobi"
+#Num_pressure_iterations = 800
+pSolverMode  = "bicgstab"
+Num_pressure_iterations = 300
 
 # Output options
 plotState    = True
@@ -364,7 +372,7 @@ state_pOld_P = state.state_P(decomp,IC_p_np)
 # Set up a Numpy mirror to the PyTorch state
 #  --> Used for file I/O
 state_data_all = (state_u_P, state_v_P, state_w_P, state_p_P)
-data_all_CPU   = state.data_all_CPU(decomp,startTime,simDt,names,state_data_all)
+data_all_CPU   = state.data_all_CPU(decomp,startTime,simDt,names[0:4],state_data_all)
 
 # Need a temporary velocity state for RK solvers
 if (solverName[:-1]=="RK"):
@@ -372,7 +380,7 @@ if (solverName[:-1]=="RK"):
     state_vTmp_P = state.state_P(decomp,IC_v_np)
     state_wTmp_P = state.state_P(decomp,IC_w_np)
 
-# Allocate workspace arrays
+# Allocate pressure source term and local viscosity
 source_P = torch.zeros(nx_,ny_,nz_,dtype=precision).to(device)
 VISC_P   = torch.ones(nxo_,nyo_,nzo_,dtype=precision).to(device)
 VISC_P.mul_(mu)
@@ -381,13 +389,16 @@ VISC_P.mul_(mu)
 if (SFSmodel=='Smagorinsky'):
     use_SFSmodel = True
     sfsmodel = sfsmodel_smagorinsky.stress_constCs(geometry,metric)
+elif (SFSmodel=='gradient'):
+    use_SFSmodel = True
+    sfsmodel = sfsmodel_gradient.residual_stress(decomp,geometry,metric)
 else:
     # Construct a blank SFSmodel object
     use_SFSmodel = False
     sfsmodel = sfsmodel_smagorinsky.stress_constCs(geometry,metric)
 
 # Save the molecular viscosity
-if (use_SFSmodel):
+if (sfsmodel.modelType=='eddyVisc'):
     muMolec = mu
 
 # Allocate RHS objects
@@ -423,7 +434,7 @@ elif (equationMode=='NS'):
         
 else:
     if (decomp.rank==0):
-        print("Equation setting not recognized; consequences unknown...")
+        raise Exception("Equation setting not recognized; consequences unknown...")
     
 # Clean up
 del IC_u_np
@@ -464,18 +475,22 @@ for iterations in range(1):
     # Write the stdout header
     if (equationMode=='NS'):
         if (decomp.rank==0):
-            headStr = "  {:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}"
-            print(headStr.format("Step","Time","max CFL","max U","max V","max W","int RP","max res_P"))
+            headStr = "  {:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}"
+            print(headStr.format("Step","Time","max CFL","max U","max V","max W","rms Vel","int RP","max res_P"))
     else:
         if (decomp.rank==0):
-            headStr = "  {:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}"
-            print(headStr.format("Step","Time","max CFL","max U","max V","max W"))
+            headStr = "  {:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}"
+            print(headStr.format("Step","Time","max CFL","max U","max V","max W","rms Vel"))
 
     # Write the initial data file
     timeStr = "{:12.7E}".format(simTime)
     if (decomp.rank==0):
         dr.writeNGArestart(fNameOut+'_'+timeStr,data_all_CPU,True)
     dr.writeNGArestart_parallel(fNameOut+'_'+timeStr,data_all_CPU)
+
+    # Compute resolved kinetic energy and velocity rms
+    initEnergy = comms.parallel_sum(torch.sum(state_u_P.var**2 + state_v_P.var**2 + state_w_P.var**2).numpy())
+    rmsVel = np.sqrt(initEnergy/decomp.N)
     
     # Write initial condition stats
     maxU = comms.parallel_max(torch.max(state_u_P.var).numpy())
@@ -483,16 +498,13 @@ for iterations in range(1):
     maxW = comms.parallel_max(torch.max(state_w_P.var).numpy())
     if (decomp.rank==0):
         maxCFL = max((maxU/geometry.dx,maxV/geometry.dy,maxW/geometry.dz))*simDt
-        lineStr = "  {:10d}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}"
-        print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW))
+        lineStr = "  {:10d}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}"
+        print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW,rmsVel))
 
     if (plotState):
         timeStr = "{:12.7E}_{}".format(simTime,decomp.rank)
         # Plot the initial state
         decomp.plot_fig_root(dr,state_u_P.var,"state_U_"+str(itCount)+"_"+timeStr)
-
-    # Compute the initial energy
-    initEnergy = comms.parallel_sum(torch.sum(state_u_P.var**2 + state_v_P.var**2 + state_w_P.var**2).numpy())
     
     # Main iteration loop
     while (simTime < stopTime):
@@ -512,16 +524,15 @@ for iterations in range(1):
                 muEddy = sfsmodel.eddyVisc(state_u_P,state_v_P,state_w_P,rho,metric)
                 VISC_P.copy_( muMolec + muEddy )
             elif (sfsmodel.modelType=='tensor'):
-                if (decomp.rank==0):
-                    print(' --> SFS model type not implemented')
+                sfsmodel.update(state_u_P,state_v_P,state_w_P,metric)
             else:
                 if (decomp.rank==0):
-                    print(' --> SFS model type not implemented')
+                    raise Exception(' --> SFS model type not implemented')
                 
         # Compute velocity prediction
         if (solverName=="Euler"):
             # rhs
-            rhs1.evaluate(state_u_P,state_v_P,state_w_P,VISC_P,rho,metric)
+            rhs1.evaluate(state_u_P,state_v_P,state_w_P,VISC_P,rho,sfsmodel,metric)
 
             # Update the state using explicit Euler
             state_u_P.var = state_u_P.var + rhs1.rhs_u*simDt
@@ -533,25 +544,25 @@ for iterations in range(1):
             # [JFM] need to pass tensor-type turbulence models into the RHS
             
             # Stage 1
-            rhs1.evaluate(state_u_P,state_v_P,state_w_P,VISC_P,rho,metric)
+            rhs1.evaluate(state_u_P,state_v_P,state_w_P,VISC_P,rho,sfsmodel,metric)
             
             # Stage 2
             state_uTmp_P.ZAXPY(0.5*simDt,rhs1.rhs_u,state_u_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
             state_vTmp_P.ZAXPY(0.5*simDt,rhs1.rhs_v,state_v_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
             state_wTmp_P.ZAXPY(0.5*simDt,rhs1.rhs_w,state_w_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
-            rhs2.evaluate(state_uTmp_P,state_vTmp_P,state_wTmp_P,VISC_P,rho,metric)
+            rhs2.evaluate(state_uTmp_P,state_vTmp_P,state_wTmp_P,VISC_P,rho,sfsmodel,metric)
 
             # Stage 3
             state_uTmp_P.ZAXPY(0.5*simDt,rhs2.rhs_u,state_u_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
             state_vTmp_P.ZAXPY(0.5*simDt,rhs2.rhs_v,state_v_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
             state_wTmp_P.ZAXPY(0.5*simDt,rhs2.rhs_w,state_w_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
-            rhs3.evaluate(state_uTmp_P,state_vTmp_P,state_wTmp_P,VISC_P,rho,metric)
+            rhs3.evaluate(state_uTmp_P,state_vTmp_P,state_wTmp_P,VISC_P,rho,sfsmodel,metric)
 
             # Stage 4
             state_uTmp_P.ZAXPY(simDt,rhs3.rhs_u,state_u_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
             state_vTmp_P.ZAXPY(simDt,rhs3.rhs_v,state_v_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
             state_wTmp_P.ZAXPY(simDt,rhs3.rhs_w,state_w_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
-            rhs4.evaluate(state_uTmp_P,state_vTmp_P,state_wTmp_P,VISC_P,rho,metric)
+            rhs4.evaluate(state_uTmp_P,state_vTmp_P,state_wTmp_P,VISC_P,rho,sfsmodel,metric)
 
             # Update the state
             state_u_P.update( state_u_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1]
@@ -602,10 +613,6 @@ for iterations in range(1):
             state_u_P.vel_corr(state_p_P.grad_x,simDt/rho)
             state_v_P.vel_corr(state_p_P.grad_y,simDt/rho)
             state_w_P.vel_corr(state_p_P.grad_z,simDt/rho)
-                           
-            #state_u_P.var = state_u_P.var - state_p_P.grad_x/rho*simDt
-            #state_v_P.var = state_v_P.var - state_p_P.grad_y/rho*simDt
-            #state_w_P.var = state_w_P.var - state_p_P.grad_z/rho*simDt
 
         
         # ----------------------------------------------------
@@ -616,6 +623,8 @@ for iterations in range(1):
         maxV = comms.parallel_max(torch.max(state_v_P.var).numpy())
         maxW = comms.parallel_max(torch.max(state_w_P.var).numpy())
         maxCFL = max((maxU/geometry.dx,maxV/geometry.dy,maxW/geometry.dz))*simDt
+        rmsVel = comms.parallel_sum(torch.sum(state_u_P.var**2 + state_v_P.var**2 + state_w_P.var**2).numpy())
+        rmsVel = np.sqrt(rmsVel/decomp.N)
 
         # Update the time
         itCount += 1
@@ -624,12 +633,12 @@ for iterations in range(1):
         # Write stats
         if (equationMode=='NS'):
             if (decomp.rank==0):
-                lineStr = "  {:10d}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{: 10.6E}\t{: 10.6E}"
-                print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW,int_RP,max_res_P))
+                lineStr = "  {:10d}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{: 10.6E}\t{: 10.6E}"
+                print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW,rmsVel,int_RP,max_res_P))
         else:
             if (decomp.rank==0):
-                lineStr = "  {:10d}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}"
-                print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW))
+                lineStr = "  {:10d}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}"
+                print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW,rmsVel))
 
         # Write output
         if (np.mod(itCount,numItDataOut)==0):

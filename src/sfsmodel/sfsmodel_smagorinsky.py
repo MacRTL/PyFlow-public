@@ -37,7 +37,7 @@ import torch
 # Smagorinsky model for the SFS residual stress
 # ----------------------------------------------------
 class stress_constCs:
-    def __init__(self,geo,metric,use_SFSmodel=True):
+    def __init__(self,geo,metric):
 
         # External model type identifier
         self.modelType = 'eddyVisc'
@@ -69,7 +69,10 @@ class stress_constCs:
         # Model parameters
         # Assuming uniform grid for now
         self.Cs    = 0.18
-        self.Delta = geo.dx
+        if (geo.type=='uniform'):
+            self.Delta = geo.dx
+        else:
+            raise Exception('sfsmodel_smagorinsky: geometry type not implemented')
 
         
     # ----------------------------------------------------

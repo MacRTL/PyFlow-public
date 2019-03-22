@@ -167,6 +167,7 @@ class decomp:
         # Domain decomposition
         
         # Grid size
+        self.N  = Nx*Ny*Nz
         self.nx = Nx
         self.ny = Ny
         self.nz = Nz
