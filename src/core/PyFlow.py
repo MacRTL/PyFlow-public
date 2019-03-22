@@ -113,7 +113,7 @@ if (configName=='restart'):
 
 # Data file to write
 fNameOut     = 'dnsbox_1024_Lx0.045_NR_Delta16_Down16_00000020'
-numItDataOut = 50
+numItDataOut = 500
 
 # Parallel decomposition
 nproc_x = 1
@@ -126,13 +126,13 @@ rho = 1.2
 
 # Time step info
 simDt        = 5e-6
-numIt        = 500
+numIt        = 1000
 startTime    = 0.0
 
 # SFS model
 #   SFSmodel options: none, Smagorinsky, gradient, nn
 #SFSmodel = 'none'
-#SFSmodel = 'Smagorinsky'
+#SFSmodel = 'Smagorinsky'; Cs = 0.18
 SFSmodel = 'gradient'
 
 # Solver settings
@@ -151,7 +151,7 @@ Num_pressure_iterations = 300
 
 # Output options
 plotState    = True
-numItPlotOut = 20
+numItPlotOut = 50
 
 # Comparison options
 useTargetData = False
@@ -388,7 +388,7 @@ VISC_P.mul_(mu)
 # SFS model
 if (SFSmodel=='Smagorinsky'):
     use_SFSmodel = True
-    sfsmodel = sfsmodel_smagorinsky.stress_constCs(geometry,metric)
+    sfsmodel = sfsmodel_smagorinsky.stress_constCs(geometry,metric,Cs)
 elif (SFSmodel=='gradient'):
     use_SFSmodel = True
     sfsmodel = sfsmodel_gradient.residual_stress(decomp,geometry,metric)

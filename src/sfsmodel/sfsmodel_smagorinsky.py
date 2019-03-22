@@ -37,7 +37,7 @@ import torch
 # Smagorinsky model for the SFS residual stress
 # ----------------------------------------------------
 class stress_constCs:
-    def __init__(self,geo,metric):
+    def __init__(self,geo,metric,CsIn=0.18):
 
         # External model type identifier
         self.modelType = 'eddyVisc'
@@ -68,7 +68,7 @@ class stress_constCs:
 
         # Model parameters
         # Assuming uniform grid for now
-        self.Cs    = 0.18
+        self.Cs = CsIn
         if (geo.type=='uniform'):
             self.Delta = geo.dx
         else:
