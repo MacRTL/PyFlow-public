@@ -128,7 +128,7 @@ class state_P:
                      self.kmin_:self.kmax_+1].copy_(tmp_IC)
             del tmp_IC
 
-        # Update the initial condition in the overlap cells
+        # Communicate the initial condition in the overlap cells
         self.update_border()
     
         
@@ -153,11 +153,16 @@ class state_P:
         self.update_border()
 
 
-    def update(self,input):
-        # Copy in updated data
+    def copy(self,input):
+        # Copy new state data
         self.var[self.imin_:self.imax_+1,
                  self.jmin_:self.jmax_+1,
                  self.kmin_:self.kmax_+1].copy_(input)
+
+
+    def update(self,input):
+        # Copy new state data
+        self.copy(input)
         
         # Update the overlap cells
         self.update_border()

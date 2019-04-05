@@ -67,7 +67,7 @@ class rhs_scalar:
             
     # ----------------------------------------------------
     # Evaluate the RHS
-    def evaluate(self,state_u,state_v,state_w,VISC,rho,metric):
+    def evaluate(self,state_u,state_v,state_w,VISC,rho,sfsmodel,metric):
         # Zero the rhs
         self.rhs_u.zero_()
         self.rhs_v.zero_()
@@ -148,26 +148,27 @@ class rhs_NavierStokes:
         prec = decomp.prec
 
         # Data sizes
-        nx_ = decomp.nx_
-        ny_ = decomp.ny_
-        nz_ = decomp.nz_
+        nx_  = decomp.nx_
+        ny_  = decomp.ny_
+        nz_  = decomp.nz_
         nxo_ = decomp.nxo_
         nyo_ = decomp.nyo_
         nzo_ = decomp.nzo_
         
         # Allocate rhs arrays
-        self.rhs_u = torch.zeros(nx_,ny_,nz_,dtype=prec).to(decomp.device)
-        self.rhs_v = torch.zeros(nx_,ny_,nz_,dtype=prec).to(decomp.device)
-        self.rhs_w = torch.zeros(nx_,ny_,nz_,dtype=prec).to(decomp.device)
-        self.FX    = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(decomp.device)
-        self.FY    = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(decomp.device)
-        self.FZ    = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(decomp.device)
-        self.interp_VISC = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(decomp.device)
+        self.rhs_u     = torch.zeros(nx_,ny_,nz_,dtype=prec).to(decomp.device)
+        self.rhs_v     = torch.zeros(nx_,ny_,nz_,dtype=prec).to(decomp.device)
+        self.rhs_w     = torch.zeros(nx_,ny_,nz_,dtype=prec).to(decomp.device)
+        self.FX        = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(decomp.device)
+        self.FY        = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(decomp.device)
+        self.FZ        = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(decomp.device)
+        self.div_vel   = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(decomp.device)
+        self.interp_SC = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(decomp.device)
 
             
     # ----------------------------------------------------
     # Evaluate the RHS
-    def evaluate(self,state_u,state_v,state_w,VISC,rho,metric):
+    def evaluate(self,state_u,state_v,state_w,VISC,rho,sfsmodel,metric):
         # Zero the rhs
         self.rhs_u.zero_()
         self.rhs_v.zero_()
@@ -180,53 +181,85 @@ class rhs_NavierStokes:
         metric.grad_vel_visc(state_u)
         metric.grad_vel_visc(state_v)
         metric.grad_vel_visc(state_w)
-        
+
+        # Compute velocity divergence for the viscous flux
+        metric.div_vel_over(state_u,state_v,state_w,self.div_vel)
+        self.div_vel.div_( 3.0 )
+
         # Viscous fluxes
+        # VISC includes the eddy viscosity if required
         #print(self.FX.device)
         #print(state_u.grad_x.device)
         # xx
         self.FX.copy_( state_u.grad_x )
+        self.FX.sub_ ( self.div_vel )
         self.FX.mul_ ( 2.0*VISC/rho )
         # xy
-        metric.interp_sc_xy(VISC,self.interp_VISC)
+        metric.interp_sc_xy(VISC,self.interp_SC)
         self.FY.copy_( state_u.grad_y )
         self.FY.add_ ( state_v.grad_x )
-        self.FY.mul_ ( self.interp_VISC/rho )
+        self.FY.mul_ ( self.interp_SC/rho )
         # xz
-        metric.interp_sc_xz(VISC,self.interp_VISC)
+        metric.interp_sc_xz(VISC,self.interp_SC)
         self.FZ.copy_( state_u.grad_z )
         self.FZ.add_ ( state_w.grad_x )
-        self.FZ.mul_ ( self.interp_VISC/rho )
+        self.FZ.mul_ ( self.interp_SC/rho )
+        # Add the modeled SFS flux
+        if (sfsmodel.modelType=='tensor'):
+            self.FX.add_( sfsmodel.FXX )
+            metric.interp_sc_xy(sfsmodel.FXY,self.interp_SC)
+            self.FY.add_( self.interp_SC )
+            metric.interp_sc_xz(sfsmodel.FXZ,self.interp_SC)
+            self.FZ.add_( self.interp_SC )
+        # Divergence of the viscous+SFS flux
         metric.div_visc(self.FX,self.FY,self.FZ,self.rhs_u)
         
         # yx
-        metric.interp_sc_xy(VISC,self.interp_VISC)
+        metric.interp_sc_xy(VISC,self.interp_SC)
         self.FX.copy_( state_v.grad_x )
         self.FX.add_ ( state_u.grad_y )
-        self.FX.mul_ ( self.interp_VISC/rho )
+        self.FX.mul_ ( self.interp_SC/rho )
         # yy
         self.FY.copy_( state_v.grad_y )
+        self.FY.sub_ ( self.div_vel )
         self.FY.mul_ ( 2.0*VISC/rho )
         # yz
-        metric.interp_sc_yz(VISC,self.interp_VISC)
+        metric.interp_sc_yz(VISC,self.interp_SC)
         self.FZ.copy_( state_v.grad_z )
         self.FZ.add_ ( state_w.grad_y )
-        self.FZ.mul_ ( self.interp_VISC/rho )
+        self.FZ.mul_ ( self.interp_SC/rho )
+        # Add the modeled SFS flux
+        if (sfsmodel.modelType=='tensor'):
+            metric.interp_sc_xy(sfsmodel.FXY,self.interp_SC)
+            self.FX.add_( self.interp_SC )
+            self.FY.add_( sfsmodel.FYY )
+            metric.interp_sc_yz(sfsmodel.FYZ,self.interp_SC)
+            self.FZ.add_( self.interp_SC )
+        # Divergence of the viscous+SFS flux
         metric.div_visc(self.FX,self.FY,self.FZ,self.rhs_v)
         
         # zx
-        metric.interp_sc_xz(VISC,self.interp_VISC)
+        metric.interp_sc_xz(VISC,self.interp_SC)
         self.FX.copy_( state_w.grad_x )
         self.FX.add_ ( state_u.grad_z )
-        self.FX.mul_ ( self.interp_VISC/rho )
+        self.FX.mul_ ( self.interp_SC/rho )
         # zy
-        metric.interp_sc_yz(VISC,self.interp_VISC)
+        metric.interp_sc_yz(VISC,self.interp_SC)
         self.FY.copy_( state_w.grad_y )
         self.FY.add_ ( state_v.grad_z )
-        self.FY.mul_ ( self.interp_VISC/rho )
+        self.FY.mul_ ( self.interp_SC/rho )
         # zz
         self.FZ.copy_( state_w.grad_z )
+        self.FZ.sub_ ( self.div_vel )
         self.FZ.mul_ ( 2.0*VISC/rho )
+        # Add the modeled SFS flux
+        if (sfsmodel.modelType=='tensor'):
+            metric.interp_sc_xz(sfsmodel.FXZ,self.interp_SC)
+            self.FX.add_( self.interp_SC )
+            metric.interp_sc_yz(sfsmodel.FYZ,self.interp_SC)
+            self.FY.add_( self.interp_SC )
+            self.FZ.add_( sfsmodel.FZZ )
+        # Divergence of the viscous+SFS flux
         metric.div_visc(self.FX,self.FY,self.FZ,self.rhs_w)
         
         # Advective fluxes
