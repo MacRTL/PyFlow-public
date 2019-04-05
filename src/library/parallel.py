@@ -50,7 +50,9 @@ class comms:
                 sendLen = len(sendBuf)
             else:
                 sendLen = 1
-            recvBuf = np.zeros(sendLen, dtype=type)
+                sendBuf = np.array((sendBuf,))
+            
+            recvBuf = np.zeros_like(sendBuf)
             self.comm.Allreduce(sendBuf,recvBuf,op=MPI.SUM)
             if (sendLen==1):
                 out = recvBuf[0]
