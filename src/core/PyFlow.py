@@ -116,7 +116,7 @@ fNameOut     = 'dnsbox_1024_Lx0.045_NR_Delta16_Down16_00000020'
 numItDataOut = 500
 
 # Parallel decomposition
-nproc_x = 1
+nproc_x = 2
 nproc_y = 1
 nproc_z = 1
 
@@ -126,14 +126,14 @@ rho = 1.2
 
 # Time step info
 simDt        = 5e-6
-numIt        = 1000
+numIt        = 10
 startTime    = 0.0
 
 # SFS model
 #   SFSmodel options: none, Smagorinsky, gradient, nn
 #SFSmodel = 'none'
-#SFSmodel = 'Smagorinsky'; Cs = 0.18
-SFSmodel = 'gradient'
+SFSmodel = 'Smagorinsky'; Cs = 0.18
+#SFSmodel = 'gradient'
 
 # Solver settings
 #   solverName options:   Euler, RK4
@@ -144,10 +144,10 @@ solverName   = "RK4"
 equationMode = "NS"
 genericOrder = 2
 precision    = torch.float32
-#pSolverMode  = "Jacobi"
-#Num_pressure_iterations = 800
-pSolverMode  = "bicgstab"
-Num_pressure_iterations = 300
+pSolverMode  = "Jacobi"
+Num_pressure_iterations = 800
+#pSolverMode  = "bicgstab"
+#Num_pressure_iterations = 300
 
 # Output options
 plotState    = True
@@ -363,10 +363,10 @@ model_name = 'LES_model_NR_March2019'
 # ----------------------------------------------------
 
 # Allocate state data using PyTorch variables
-state_u_P = state.state_P(decomp,IC_u_np)
-state_v_P = state.state_P(decomp,IC_v_np)
-state_w_P = state.state_P(decomp,IC_w_np)
-state_p_P = state.state_P(decomp,IC_p_np)
+state_u_P    = state.state_P(decomp,IC_u_np)
+state_v_P    = state.state_P(decomp,IC_v_np)
+state_w_P    = state.state_P(decomp,IC_w_np)
+state_p_P    = state.state_P(decomp,IC_p_np)
 state_pOld_P = state.state_P(decomp,IC_p_np)
 
 # Set up a Numpy mirror to the PyTorch state
@@ -489,7 +489,10 @@ for iterations in range(1):
     dr.writeNGArestart_parallel(fNameOut+'_'+timeStr,data_all_CPU)
 
     # Compute resolved kinetic energy and velocity rms
-    initEnergy = comms.parallel_sum(torch.sum(state_u_P.var**2 + state_v_P.var**2 + state_w_P.var**2).numpy())
+    #initEnergy = comms.parallel_sum(torch.sum(state_u_P.var**2 + state_v_P.var**2 + state_w_P.var**2).numpy())
+    initEnergy = comms.parallel_sum(np.sum( data_all_CPU.read(0)**2 +
+                                            data_all_CPU.read(1)**2 +
+                                            data_all_CPU.read(2)**2 ))
     rmsVel = np.sqrt(initEnergy/decomp.N)
     
     # Write initial condition stats
@@ -527,7 +530,7 @@ for iterations in range(1):
                 sfsmodel.update(state_u_P,state_v_P,state_w_P,metric)
             else:
                 if (decomp.rank==0):
-                    raise Exception(' --> SFS model type not implemented')
+                    raise Exception('PyFlow: SFS model type not implemented')
                 
         # Compute velocity prediction
         if (solverName=="Euler"):
@@ -623,7 +626,10 @@ for iterations in range(1):
         maxV = comms.parallel_max(torch.max(state_v_P.var).numpy())
         maxW = comms.parallel_max(torch.max(state_w_P.var).numpy())
         maxCFL = max((maxU/geometry.dx,maxV/geometry.dy,maxW/geometry.dz))*simDt
-        rmsVel = comms.parallel_sum(torch.sum(state_u_P.var**2 + state_v_P.var**2 + state_w_P.var**2).numpy())
+        #rmsVel = comms.parallel_sum(torch.sum(state_u_P.var**2 + state_v_P.var**2 + state_w_P.var**2).numpy())
+        rmsVel = comms.parallel_sum(np.sum( data_all_CPU.read(0)**2 +
+                                            data_all_CPU.read(1)**2 +
+                                            data_all_CPU.read(2)**2 ))
         rmsVel = np.sqrt(rmsVel/decomp.N)
 
         # Update the time

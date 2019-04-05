@@ -277,6 +277,21 @@ class metric_uniform:
         
     # -------------------------------------------------
     # Divergence of the velocity field at cell centers
+    #   including overlap cells - needed for viscous fluxes
+    def div_vel_over(self,state_u,state_v,state_w,divg_o):
+        # Zero the divergence
+        divg_o.zero_()
+        
+        divg_o[:-1,:,:].add_( state_u.var[1: ,:,:] )
+        divg_o[:-1,:,:].sub_( state_u.var[:-1,:,:] )
+        divg_o[:-1,:,:].mul_( self.grad_x )
+                  
+        divg_o[:,:-1,:] += ( state_v.var[:,1: ,:] - state_v.var[:,:-1,:] )*self.grad_y
+        divg_o[:,:,:-1] += ( state_w.var[:,:,1: ] - state_w.var[:,:,:-1] )*self.grad_z
+
+        
+    # -------------------------------------------------
+    # Divergence of the velocity field at cell centers
     def div_vel(self,state_u,state_v,state_w,divg):
         imin_ = self.imin_; imax_ = self.imax_
         jmin_ = self.jmin_; jmax_ = self.jmax_

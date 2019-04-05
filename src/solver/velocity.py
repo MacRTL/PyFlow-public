@@ -148,20 +148,21 @@ class rhs_NavierStokes:
         prec = decomp.prec
 
         # Data sizes
-        nx_ = decomp.nx_
-        ny_ = decomp.ny_
-        nz_ = decomp.nz_
+        nx_  = decomp.nx_
+        ny_  = decomp.ny_
+        nz_  = decomp.nz_
         nxo_ = decomp.nxo_
         nyo_ = decomp.nyo_
         nzo_ = decomp.nzo_
         
         # Allocate rhs arrays
-        self.rhs_u = torch.zeros(nx_,ny_,nz_,dtype=prec).to(decomp.device)
-        self.rhs_v = torch.zeros(nx_,ny_,nz_,dtype=prec).to(decomp.device)
-        self.rhs_w = torch.zeros(nx_,ny_,nz_,dtype=prec).to(decomp.device)
-        self.FX    = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(decomp.device)
-        self.FY    = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(decomp.device)
-        self.FZ    = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(decomp.device)
+        self.rhs_u     = torch.zeros(nx_,ny_,nz_,dtype=prec).to(decomp.device)
+        self.rhs_v     = torch.zeros(nx_,ny_,nz_,dtype=prec).to(decomp.device)
+        self.rhs_w     = torch.zeros(nx_,ny_,nz_,dtype=prec).to(decomp.device)
+        self.FX        = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(decomp.device)
+        self.FY        = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(decomp.device)
+        self.FZ        = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(decomp.device)
+        self.div_vel   = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(decomp.device)
         self.interp_SC = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(decomp.device)
 
             
@@ -181,13 +182,17 @@ class rhs_NavierStokes:
         metric.grad_vel_visc(state_v)
         metric.grad_vel_visc(state_w)
 
-        ## JFM - does interp_SC need ghost cell synchronization? (check div_visc)
-        
+        # Compute velocity divergence for the viscous flux
+        metric.div_vel_over(state_u,state_v,state_w,self.div_vel)
+        self.div_vel.div_( 3.0 )
+
         # Viscous fluxes
+        # VISC includes the eddy viscosity if required
         #print(self.FX.device)
         #print(state_u.grad_x.device)
         # xx
         self.FX.copy_( state_u.grad_x )
+        self.FX.sub_ ( self.div_vel )
         self.FX.mul_ ( 2.0*VISC/rho )
         # xy
         metric.interp_sc_xy(VISC,self.interp_SC)
@@ -216,6 +221,7 @@ class rhs_NavierStokes:
         self.FX.mul_ ( self.interp_SC/rho )
         # yy
         self.FY.copy_( state_v.grad_y )
+        self.FY.sub_ ( self.div_vel )
         self.FY.mul_ ( 2.0*VISC/rho )
         # yz
         metric.interp_sc_yz(VISC,self.interp_SC)
@@ -244,6 +250,7 @@ class rhs_NavierStokes:
         self.FY.mul_ ( self.interp_SC/rho )
         # zz
         self.FZ.copy_( state_w.grad_z )
+        self.FZ.sub_ ( self.div_vel )
         self.FZ.mul_ ( 2.0*VISC/rho )
         # Add the modeled SFS flux
         if (sfsmodel.modelType=='tensor'):
