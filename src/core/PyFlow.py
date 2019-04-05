@@ -32,15 +32,17 @@
 # ------------------------------------------------------------------------
 
 import numpy as np
+import sys
+sys.path.insert(0, "/mnt/bwpy/single/usr/lib/python3.5/site-packages")
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.autograd import Variable
+sys.path.pop(0)
 
 import time
 import copy
-import sys
 import os
 
 # Load PyFlow modules
@@ -120,7 +122,7 @@ rho = 1.2
 
 # Time step info
 simDt        = 2.5e-6
-numIt        = 500
+numIt        = 20
 startTime    = 0.0
 
 # SFS model
@@ -142,7 +144,7 @@ Num_pressure_iterations = 800
 #Num_pressure_iterations = 300
 
 # Output options
-plotState    = True
+plotState    = False
 numItPlotOut = 20
 
 # Comparison options
@@ -478,9 +480,9 @@ for iterations in range(1):
     dr.writeNGArestart_parallel(fNameOut+'_'+timeStr,data_all_CPU)
     
     # Write initial condition stats
-    maxU = comms.parallel_max(torch.max(state_u_P.var).numpy())
-    maxV = comms.parallel_max(torch.max(state_v_P.var).numpy())
-    maxW = comms.parallel_max(torch.max(state_w_P.var).numpy())
+    maxU = comms.parallel_max(torch.max(state_u_P.var).cpu().numpy())
+    maxV = comms.parallel_max(torch.max(state_v_P.var).cpu().numpy())
+    maxW = comms.parallel_max(torch.max(state_w_P.var).cpu().numpy())
     if (decomp.rank==0):
         maxCFL = max((maxU/geometry.dx,maxV/geometry.dy,maxW/geometry.dz))*simDt
         lineStr = "  {:10d}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}"
@@ -492,7 +494,7 @@ for iterations in range(1):
         decomp.plot_fig_root(dr,state_u_P.var,"state_U_"+str(itCount)+"_"+timeStr)
 
     # Compute the initial energy
-    initEnergy = comms.parallel_sum(torch.sum(state_u_P.var**2 + state_v_P.var**2 + state_w_P.var**2).numpy())
+    initEnergy = comms.parallel_sum(torch.sum(state_u_P.var**2 + state_v_P.var**2 + state_w_P.var**2).cpu().numpy())
     
     # Main iteration loop
     while (simTime < stopTime):
@@ -582,13 +584,13 @@ for iterations in range(1):
             metric.div_vel(state_u_P,state_v_P,state_w_P,source_P)
             
             # Integral of the Poisson eqn RHS
-            int_RP = comms.parallel_sum(torch.sum(source_P).numpy())
+            int_RP = comms.parallel_sum(torch.sum(source_P).cpu().numpy())
 
             # Solve the Poisson equation
             poisson.solve(state_pOld_P,state_p_P,source_P)
                 
             # Max pressure residual
-            max_res_P = comms.parallel_max(torch.max(torch.abs(state_p_P.var - state_pOld_P.var)).numpy())
+            max_res_P = comms.parallel_max(torch.max(torch.abs(state_p_P.var - state_pOld_P.var)).cpu().numpy())
 
         
             # ----------------------------------------------------
@@ -612,9 +614,9 @@ for iterations in range(1):
         # Post-step
         # ----------------------------------------------------
         # Compute stats
-        maxU = comms.parallel_max(torch.max(state_u_P.var).numpy())
-        maxV = comms.parallel_max(torch.max(state_v_P.var).numpy())
-        maxW = comms.parallel_max(torch.max(state_w_P.var).numpy())
+        maxU = comms.parallel_max(torch.max(state_u_P.var).cpu().numpy())
+        maxV = comms.parallel_max(torch.max(state_v_P.var).cpu().numpy())
+        maxW = comms.parallel_max(torch.max(state_w_P.var).cpu().numpy())
         maxCFL = max((maxU/geometry.dx,maxV/geometry.dy,maxW/geometry.dz))*simDt
 
         # Update the time
@@ -678,7 +680,7 @@ for iterations in range(1):
     test = torch.mean( state_u_P.var)
         
     # Compute the final energy
-    finalEnergy = comms.parallel_sum(torch.sum(state_u_P.var**2 + state_v_P.var**2 + state_w_P.var**2).numpy())
+    finalEnergy = comms.parallel_sum(torch.sum(state_u_P.var**2 + state_v_P.var**2 + state_w_P.var**2).cpu().numpy())
     
     if (useTargetData):
         if (decomp.rank==0):

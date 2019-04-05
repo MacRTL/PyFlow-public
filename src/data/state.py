@@ -82,7 +82,7 @@ class data_all_CPU:
 
     def read(self,ivar):
         if (ivar<self.nvar):
-            return self.data[ivar].numpy()
+            return self.data[ivar].cpu().numpy()
 
 
 # ----------------------------------------------------
