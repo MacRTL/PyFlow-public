@@ -38,13 +38,14 @@ from mpi4py import MPI
 # Parallel communication functions
 # ----------------------------------------------------
 class comms:
-    def __init__(self):
+    def __init__(self,dtypeNumpy=np.float32):
         # Get MPI decomposition info
         self.comm = MPI.COMM_WORLD
         self.rank = self.comm.Get_rank()
         self.size = self.comm.Get_size()
+        self.dtype = dtypeNumpy
 
-    def parallel_sum(self,sendBuf,type=np.float32):
+    def parallel_sum(self,sendBuf):
         if (self.size>1):
             if (hasattr(sendBuf,"__size__")):
                 sendLen = len(sendBuf)
@@ -63,13 +64,13 @@ class comms:
             out = sendBuf
         return out
 
-    def parallel_max(self,sendBuf,type=np.float32):
+    def parallel_max(self,sendBuf):
         if (self.size>1):
             if (hasattr(sendBuf,"__size__")):
                 sendLen = len(sendBuf)
             else:
                 sendLen = 1
-            recvBuf = np.zeros(sendLen, dtype=type)
+            recvBuf = np.zeros(sendLen, dtype=self.dtype)
             self.comm.Allreduce(sendBuf,recvBuf,op=MPI.MAX)
             if (sendLen==1):
                 out = recvBuf[0]
@@ -80,13 +81,13 @@ class comms:
             out = sendBuf
         return out
 
-    def parallel_min(self,sendBuf,type=np.float32):
+    def parallel_min(self,sendBuf):
         if (self.size>1):
             if (hasattr(sendBuf,"__size__")):
                 sendLen = len(sendBuf)
             else:
                 sendLen = 1
-            recvBuf = np.zeros(sendLen, dtype=type)
+            recvBuf = np.zeros(sendLen, dtype=self.dtype)
             self.comm.Allreduce(sendBuf,recvBuf,op=MPI.MIN)
             if (sendLen==1):
                 out = recvBuf[0]
@@ -102,10 +103,11 @@ class comms:
 # MPI decomposition
 # ----------------------------------------------------
 class decomp:
-    def __init__(self,Nx,Ny,Nz,nproc_decomp,isper,device,prec=torch.float32):
+    def __init__(self,Nx,Ny,Nz,nproc_decomp,isper,device,
+                 dtypeTorch=torch.float32,dtypeNumpy=np.float32):
 
-        self.prec = prec
-        self.dtypeNumpy = np.float32
+        self.prec = dtypeTorch
+        self.dtypeNumpy = dtypeNumpy
 
         # Offloading settings
         self.device = device

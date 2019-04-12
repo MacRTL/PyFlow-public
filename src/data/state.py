@@ -160,6 +160,21 @@ class state_P:
                  self.kmin_:self.kmax_+1].copy_(input)
 
 
+    def copy_red(self,input):
+        # Copy new state data to 'red' cells and update the borders
+        self.var[self.imin_:self.imax_:2,
+                 self.jmin_:self.jmax_:2,
+                 self.kmin_:self.kmax_:2].copy_(input)
+        #self.update_border()
+        
+    def copy_black(self,input):
+        # Copy new state data to 'black' cells and update the borders
+        self.var[self.imin_+1:self.imax_+1:2,
+                 self.jmin_+1:self.jmax_+1:2,
+                 self.kmin_+1:self.kmax_+1:2].copy_(input)
+        #self.update_border()
+
+
     def update(self,input):
         # Copy new state data
         self.copy(input)

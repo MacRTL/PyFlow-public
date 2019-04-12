@@ -80,7 +80,7 @@ class metric_uniform:
                           dyi*dyi, dyi*dyi,
                           dzi*dzi, dzi*dzi ]
             offsets = [0, -nx_*ny_, nx_*ny_, -nx_, nx_, -1, +1]
-            self.Laplace = diags(diagonals, offsets, shape=(N,N), dtype=np.float32)
+            self.Laplace = diags(diagonals, offsets, shape=(N,N), dtype=geo.dtypeNumpy)
 
             # MPI: update Laplace operator border
             

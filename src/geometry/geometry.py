@@ -37,15 +37,16 @@ import torch
 # General uniform geometry
 # ----------------------------------------------------
 class uniform:
-    def __init__(self,xGrid,yGrid,zGrid,decomp,device,prec=torch.float32):
+    def __init__(self,xGrid,yGrid,zGrid,decomp):
         # Type identifier
         self.type = 'uniform'
 
         # Offloading settings
-        self.device = device
+        self.device = decomp.device
 
         # Precision - default: 32-bit floating-point precision
-        self.prec = prec
+        self.prec = decomp.prec
+        self.dtypeNumpy = decomp.dtypeNumpy
         
         # Global grid sizes
         self.Nx = len(xGrid)-1

@@ -102,23 +102,26 @@ configName = "restart"
 if (configName=='restart'):
     #dataFileStr = '../../examples/filtered_vol_dnsbox_1024_Lx0.045_NR_00000020_coarse'
     #dataFileType = 'volume'
-    
-    #configFileStr = '../../examples/config_dnsbox_128_Lx0.0056'
-    #dataFileStr   = '../../examples/data_dnsbox_128_Lx0.0056.1_2.50000E-04'
-    #dataFileStr = 'data_dnsbox_128_Lx0.0056.PF_1.2500000E-03'
-    #dataFileType  = 'restart'
 
-    # Downsampled 1024^3 DNS
-    configFileStr = '../../input/restart_1024_Lx0.045_NR_Delta16_Down16/config_dnsbox_1024_Lx0.045_NR_Delta16_Down16_0000'
-    dataFileStr   = '../../input/restart_1024_Lx0.045_NR_Delta16_Down16/dnsbox_1024_Lx0.045_NR_Delta16_Down16_00000020'
+    # Isotropic 128^3 DNS - verification vs. NGA
+    inFileDir     = '../../verification/dnsbox_128_Lx0.0056_NR/test_input_files/'
+    configFileStr = inFileDir+'config_dnsbox_128_Lx0.0056'
+    dataFileStr   = inFileDir+'data_dnsbox_128_Lx0.0056.1_5.00000E-04'
     dataFileType  = 'restart'
 
+    # Downsampled 1024^3 DNS - needs SGS model
+    #inFileDir     = '../../input/downsampled_LES_restart/dnsbox_1024_Lx0.045_NR_run_2/restart_1024_Lx0.045_NR_Delta32_Down16/'
+    #configFileStr = inFileDir+'config_dnsbox_1024_Lx0.045_NR_Delta32_Down16_0000'
+    #dataFileStr   = inFileDir+'dnsbox_1024_Lx0.045_NR_Delta32_Down16_00000020'
+    #dataFileType  = 'restart'
+
 # Data file to write
-fNameOut     = 'dnsbox_1024_Lx0.045_NR_Delta16_Down16_00000020'
+fNameOut     = 'data_dnsbox_128_Lx0.0056'
+#fNameOut     = 'dnsbox_1024_Lx0.045_NR_Delta32_Down16_00000020'
 numItDataOut = 500
 
 # Parallel decomposition
-nproc_x = 2
+nproc_x = 1
 nproc_y = 1
 nproc_z = 1
 
@@ -127,29 +130,31 @@ mu  = 1.8678e-5
 rho = 1.2
 
 # Time step info
-simDt        = 2.5e-6
+simDt        = 1.25e-6
 numIt        = 20
 startTime    = 0.0
 
 # SFS model
 #   SFSmodel options: none, Smagorinsky, gradient, nn
-#SFSmodel = 'none'
-SFSmodel = 'Smagorinsky'; Cs = 0.18
+SFSmodel = 'none'
+#SFSmodel = 'Smagorinsky'; Cs = 0.18; expFilterFac = 2;
 #SFSmodel = 'gradient'
 
 # Solver settings
 #   solverName options:   Euler, RK4
 #   equationMode options: scalar, NS
-#   pSolverMode options:  Jacobi, bicgstab
+#   pSolverMode options:  Jacobi, RedBlackGS, bicgstab
 #
 solverName   = "RK4"
 equationMode = "NS"
 genericOrder = 2
-precision    = torch.float32
-pSolverMode  = "Jacobi"
+dtypeTorch   = torch.float64
+dtypeNumpy   = np.float64
+#pSolverMode  = "Jacobi"
+##pSolverMode  = "RedBlackGS"
 Num_pressure_iterations = 800
-#pSolverMode  = "bicgstab"
-#Num_pressure_iterations = 300
+pSolverMode  = "bicgstab"
+Num_pressure_iterations = 300
 
 # Output options
 plotState    = False
@@ -176,7 +181,7 @@ device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 # Configure simulation domain
 # ----------------------------------------------------
 # Basic parallel operations
-comms = parallel.comms()
+comms = parallel.comms(dtypeNumpy)
 
 # Domain sizes if performing a restart
 if (configName=='restart'):
@@ -197,7 +202,8 @@ if (configName=='restart'):
 
 # Domain decomposition
 nproc  = [nproc_x,nproc_y,nproc_z]
-decomp = parallel.decomp(configNx,configNy,configNz,nproc,isper,device,precision)
+decomp = parallel.decomp(configNx,configNy,configNz,nproc,isper,device,
+                         dtypeTorch,dtypeNumpy)
 
 if ((nproc_x>1 and nproc_y>1) or (nproc_z>1)):
     plotState = False
@@ -310,12 +316,13 @@ elif (configName=='notAchannel'):
 
     
 # ----------------------------------------------------
-# Configure geometry
+# Configure geometry and metrics
 # ----------------------------------------------------
-geometry = geo.uniform(xGrid,yGrid,zGrid,decomp,device,precision)
+geometry = geo.uniform(xGrid,yGrid,zGrid,decomp)
 
 # Initialize the metrics
 metric = metric_staggered.metric_uniform(geometry)
+
 
 
 # ----------------------------------------------------
@@ -354,8 +361,8 @@ IC_ones_np  = np.ones ( (nx_,ny_,nz_) )
 # Initialize closure model(s)
 # ----------------------------------------------------
 # Initialize the neural network closure model
-model = sfsmodel_nn.ClosureModel2()
-model_name = 'LES_model_NR_March2019'
+#model = sfsmodel_nn.ClosureModel2()
+#model_name = 'LES_model_NR_March2019'
 #model.load_state_dict(torch.load(model_name))
 #model.to(device)
 
@@ -383,14 +390,14 @@ if (solverName[:-1]=="RK"):
     state_wTmp_P = state.state_P(decomp,IC_w_np)
 
 # Allocate pressure source term and local viscosity
-source_P = torch.zeros(nx_,ny_,nz_,dtype=precision).to(device)
-VISC_P   = torch.ones(nxo_,nyo_,nzo_,dtype=precision).to(device)
+source_P = torch.zeros(nx_,ny_,nz_,dtype=dtypeTorch).to(device)
+VISC_P   = torch.ones(nxo_,nyo_,nzo_,dtype=dtypeTorch).to(device)
 VISC_P.mul_(mu)
 
 # SFS model
 if (SFSmodel=='Smagorinsky'):
     use_SFSmodel = True
-    sfsmodel = sfsmodel_smagorinsky.stress_constCs(geometry,metric,Cs)
+    sfsmodel = sfsmodel_smagorinsky.stress_constCs(geometry,metric,Cs,expFilterFac)
 elif (SFSmodel=='gradient'):
     use_SFSmodel = True
     sfsmodel = sfsmodel_gradient.residual_stress(decomp,geometry,metric)
@@ -403,10 +410,13 @@ else:
 if (sfsmodel.modelType=='eddyVisc'):
     muMolec = mu
 
-# Allocate RHS objects
+# Switch for different solver types
 if (equationMode=='scalar'):
+    # Scalar advection-diffusion equations
     if (decomp.rank==0):
         print("\nSolving scalar advection-diffusion equation")
+
+    # Allocate RHS objects
     rhs1 = velocity.rhs_scalar(decomp,uMax,vMax,wMax)
     if (solverName[:-1]=="RK"):
         rhs2 = velocity.rhs_scalar(decomp,uMax,vMax,wMax)
@@ -414,19 +424,23 @@ if (equationMode=='scalar'):
         rhs4 = velocity.rhs_scalar(decomp,uMax,vMax,wMax)
         
 elif (equationMode=='NS'):
+    # Navier-Stokes equations
     if (decomp.rank==0):
         print("\nSolving Navier-Stokes equations")
         print("Solver settings: advancer={}, pressure={}".format(solverName,pSolverMode))
-    
+
+    # Allocate RHS objects    
     rhs1 = velocity.rhs_NavierStokes(decomp)
     if (solverName[:-1]=="RK"):
         rhs2 = velocity.rhs_NavierStokes(decomp)
         rhs3 = velocity.rhs_NavierStokes(decomp)
         rhs4 = velocity.rhs_NavierStokes(decomp)
         
-    # Pressure solver
+    # Initialize pressure solver
     if (pSolverMode=='Jacobi'):
         poisson = pressure.solver_jacobi(geometry,rho,simDt,Num_pressure_iterations)
+    if (pSolverMode=='RedBlackGS'):
+        poisson = pressure.solver_GS_redblack(geometry,rho,simDt,Num_pressure_iterations)
     elif (pSolverMode=='bicgstab'):
         if (nproc_x>1 or nproc_y>1 or nproc_z>1):
             if (decomp.rank==0):
@@ -477,11 +491,11 @@ for iterations in range(1):
     # Write the stdout header
     if (equationMode=='NS'):
         if (decomp.rank==0):
-            headStr = "  {:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}"
+            headStr = "  {:10s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}"
             print(headStr.format("Step","Time","max CFL","max U","max V","max W","rms Vel","int RP","max res_P"))
     else:
         if (decomp.rank==0):
-            headStr = "  {:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}\t{:10s}"
+            headStr = "  {:10s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}"
             print(headStr.format("Step","Time","max CFL","max U","max V","max W","rms Vel"))
 
     # Write the initial data file
@@ -491,7 +505,6 @@ for iterations in range(1):
     dr.writeNGArestart_parallel(fNameOut+'_'+timeStr,data_all_CPU)
 
     # Compute resolved kinetic energy and velocity rms
-    #initEnergy = comms.parallel_sum(torch.sum(state_u_P.var**2 + state_v_P.var**2 + state_w_P.var**2).numpy())
     initEnergy = comms.parallel_sum(np.sum( data_all_CPU.read(0)**2 +
                                             data_all_CPU.read(1)**2 +
                                             data_all_CPU.read(2)**2 ))
@@ -503,7 +516,7 @@ for iterations in range(1):
     maxW = comms.parallel_max(torch.max(state_w_P.var).cpu().numpy())
     if (decomp.rank==0):
         maxCFL = max((maxU/geometry.dx,maxV/geometry.dy,maxW/geometry.dz))*simDt
-        lineStr = "  {:10d}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}"
+        lineStr = "  {:10d}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}"
         print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW,rmsVel))
 
     if (plotState):
@@ -512,10 +525,10 @@ for iterations in range(1):
         decomp.plot_fig_root(dr,state_u_P.var,"state_U_"+str(itCount)+"_"+timeStr)
 
     # Compute the initial energy
-    initEnergy = comms.parallel_sum(torch.sum(state_u_P.var**2 + state_v_P.var**2 + state_w_P.var**2).cpu().numpy())
+    #initEnergy = comms.parallel_sum(torch.sum(state_u_P.var**2 + state_v_P.var**2 + state_w_P.var**2).cpu().numpy())
     
     # Main iteration loop
-    while (simTime < stopTime):
+    while (simTime < stopTime or itCount < numIt):
 
         # [JFM] need new sub-iteration loop
         
@@ -604,10 +617,12 @@ for iterations in range(1):
             int_RP = comms.parallel_sum(torch.sum(source_P).cpu().numpy())
 
             # Solve the Poisson equation
+            #state_pOld_P.update(state_p_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
+            #state_p_P.update_border()
             poisson.solve(state_pOld_P,state_p_P,source_P)
                 
             # Max pressure residual
-            max_res_P = comms.parallel_max(torch.max(torch.abs(state_p_P.var - state_pOld_P.var)).cpu().numpy())
+            max_res_P = comms.parallel_max(torch.max(torch.abs(state_p_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1] - state_pOld_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])).cpu().numpy())
 
         
             # ----------------------------------------------------
@@ -631,7 +646,6 @@ for iterations in range(1):
         maxV = comms.parallel_max(torch.max(state_v_P.var).cpu().numpy())
         maxW = comms.parallel_max(torch.max(state_w_P.var).cpu().numpy())
         maxCFL = max((maxU/geometry.dx,maxV/geometry.dy,maxW/geometry.dz))*simDt
-        #rmsVel = comms.parallel_sum(torch.sum(state_u_P.var**2 + state_v_P.var**2 + state_w_P.var**2).numpy())
         rmsVel = comms.parallel_sum(np.sum( data_all_CPU.read(0)**2 +
                                             data_all_CPU.read(1)**2 +
                                             data_all_CPU.read(2)**2 ))
@@ -644,11 +658,11 @@ for iterations in range(1):
         # Write stats
         if (equationMode=='NS'):
             if (decomp.rank==0):
-                lineStr = "  {:10d}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{: 10.6E}\t{: 10.6E}"
+                lineStr = "  {:10d}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {: 8.3E}   {: 8.3E}"
                 print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW,rmsVel,int_RP,max_res_P))
         else:
             if (decomp.rank==0):
-                lineStr = "  {:10d}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}\t{:10.6E}"
+                lineStr = "  {:10d}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}"
                 print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW,rmsVel))
 
         # Write output
@@ -698,7 +712,9 @@ for iterations in range(1):
     test = torch.mean( state_u_P.var)
         
     # Compute the final energy
-    finalEnergy = comms.parallel_sum(torch.sum(state_u_P.var**2 + state_v_P.var**2 + state_w_P.var**2).cpu().numpy())
+    finalEnergy = comms.parallel_sum(np.sum( data_all_CPU.read(0)**2 +
+                                             data_all_CPU.read(1)**2 +
+                                             data_all_CPU.read(2)**2 ))
     
     if (useTargetData):
         if (decomp.rank==0):
@@ -706,7 +722,7 @@ for iterations in range(1):
     else:
         if (decomp.rank==0):
             print("it={}, test={}, elapsed={}, energy final/initial={}".format(iterations,test,time_elapsed,
-                                                                           finalEnergy/initEnergy))
+                                                                               finalEnergy/initEnergy))
 
     if (plotState):
         # Print a pretty picture
