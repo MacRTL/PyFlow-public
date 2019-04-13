@@ -52,7 +52,6 @@ class comms:
             else:
                 sendLen = 1
                 sendBuf = np.array((sendBuf,))
-            
             recvBuf = np.zeros_like(sendBuf)
             self.comm.Allreduce(sendBuf,recvBuf,op=MPI.SUM)
             if (sendLen==1):
@@ -70,7 +69,8 @@ class comms:
                 sendLen = len(sendBuf)
             else:
                 sendLen = 1
-            recvBuf = np.zeros(sendLen, dtype=self.dtype)
+                sendBuf = np.array((sendBuf,))
+            recvBuf = np.zeros_like(sendBuf)
             self.comm.Allreduce(sendBuf,recvBuf,op=MPI.MAX)
             if (sendLen==1):
                 out = recvBuf[0]
@@ -87,7 +87,8 @@ class comms:
                 sendLen = len(sendBuf)
             else:
                 sendLen = 1
-            recvBuf = np.zeros(sendLen, dtype=self.dtype)
+                sendBuf = np.array((sendBuf,))
+            recvBuf = np.zeros_like(sendBuf)
             self.comm.Allreduce(sendBuf,recvBuf,op=MPI.MIN)
             if (sendLen==1):
                 out = recvBuf[0]

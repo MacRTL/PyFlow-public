@@ -84,6 +84,10 @@ class data_all_CPU:
         if (ivar<self.nvar):
             return self.data[ivar].cpu().numpy()
 
+    def absmax(self,ivar):
+        if (ivar<self.nvar):
+            return torch.max(torch.abs(self.data[ivar])).cpu().numpy()
+
 
 # ----------------------------------------------------
 # Base class for state data

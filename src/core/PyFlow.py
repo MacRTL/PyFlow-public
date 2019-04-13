@@ -118,10 +118,10 @@ if (configName=='restart'):
 # Data file to write
 fNameOut     = 'data_dnsbox_128_Lx0.0056'
 #fNameOut     = 'dnsbox_1024_Lx0.045_NR_Delta32_Down16_00000020'
-numItDataOut = 500
+numItDataOut = 5
 
 # Parallel decomposition
-nproc_x = 1
+nproc_x = 2
 nproc_y = 1
 nproc_z = 1
 
@@ -131,7 +131,7 @@ rho = 1.2
 
 # Time step info
 simDt        = 1.25e-6
-numIt        = 20
+numIt        = 100
 startTime    = 0.0
 
 # SFS model
@@ -150,11 +150,11 @@ equationMode = "NS"
 genericOrder = 2
 dtypeTorch   = torch.float64
 dtypeNumpy   = np.float64
-#pSolverMode  = "Jacobi"
+pSolverMode  = "Jacobi"
 ##pSolverMode  = "RedBlackGS"
-Num_pressure_iterations = 800
-pSolverMode  = "bicgstab"
-Num_pressure_iterations = 300
+Num_pressure_iterations = 3000
+#pSolverMode  = "bicgstab"
+#Num_pressure_iterations = 300
 
 # Output options
 plotState    = False
@@ -491,12 +491,18 @@ for iterations in range(1):
     # Write the stdout header
     if (equationMode=='NS'):
         if (decomp.rank==0):
-            headStr = "  {:10s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}"
-            print(headStr.format("Step","Time","max CFL","max U","max V","max W","rms Vel","int RP","max res_P"))
+            headStr = "  {:10s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}"
+            print(headStr.format("Step","Time","max CFL","max U","max V","max W","divergence","max res_P"))
     else:
         if (decomp.rank==0):
-            headStr = "  {:10s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}"
-            print(headStr.format("Step","Time","max CFL","max U","max V","max W","rms Vel"))
+            headStr = "  {:10s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}"
+            print(headStr.format("Step","Time","max CFL","max U","max V","max W"))
+
+    # Synchronize the overlap cells before stepping
+    state_u_P.update_border()
+    state_v_P.update_border()
+    state_w_P.update_border()
+    state_p_P.update_border()
 
     # Write the initial data file
     timeStr = "{:12.7E}".format(simTime)
@@ -508,16 +514,20 @@ for iterations in range(1):
     initEnergy = comms.parallel_sum(np.sum( data_all_CPU.read(0)**2 +
                                             data_all_CPU.read(1)**2 +
                                             data_all_CPU.read(2)**2 ))
-    rmsVel = np.sqrt(initEnergy/decomp.N)
+    #rmsVel = np.sqrt(initEnergy/decomp.N)
+    if (equationMode=='NS'):
+        # Compute the initial divergence
+        metric.div_vel(state_u_P,state_v_P,state_w_P,source_P)
+        maxDivg = comms.parallel_max(torch.max(torch.abs(source_P)).cpu().numpy())
     
     # Write initial condition stats
-    maxU = comms.parallel_max(torch.max(state_u_P.var).cpu().numpy())
-    maxV = comms.parallel_max(torch.max(state_v_P.var).cpu().numpy())
-    maxW = comms.parallel_max(torch.max(state_w_P.var).cpu().numpy())
+    maxU = comms.parallel_max(data_all_CPU.absmax(0))
+    maxV = comms.parallel_max(data_all_CPU.absmax(1))
+    maxW = comms.parallel_max(data_all_CPU.absmax(2))
     if (decomp.rank==0):
         maxCFL = max((maxU/geometry.dx,maxV/geometry.dy,maxW/geometry.dz))*simDt
         lineStr = "  {:10d}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}"
-        print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW,rmsVel))
+        print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW,maxDivg))
 
     if (plotState):
         timeStr = "{:12.7E}_{}".format(simTime,decomp.rank)
@@ -614,7 +624,7 @@ for iterations in range(1):
             metric.div_vel(state_u_P,state_v_P,state_w_P,source_P)
             
             # Integral of the Poisson eqn RHS
-            int_RP = comms.parallel_sum(torch.sum(source_P).cpu().numpy())
+            #int_RP = comms.parallel_sum(torch.sum(source_P).cpu().numpy())
 
             # Solve the Poisson equation
             #state_pOld_P.update(state_p_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
@@ -642,14 +652,18 @@ for iterations in range(1):
         # Post-step
         # ----------------------------------------------------
         # Compute stats
-        maxU = comms.parallel_max(torch.max(state_u_P.var).cpu().numpy())
-        maxV = comms.parallel_max(torch.max(state_v_P.var).cpu().numpy())
-        maxW = comms.parallel_max(torch.max(state_w_P.var).cpu().numpy())
+        maxU = comms.parallel_max(data_all_CPU.absmax(0))
+        maxV = comms.parallel_max(data_all_CPU.absmax(1))
+        maxW = comms.parallel_max(data_all_CPU.absmax(2))
         maxCFL = max((maxU/geometry.dx,maxV/geometry.dy,maxW/geometry.dz))*simDt
-        rmsVel = comms.parallel_sum(np.sum( data_all_CPU.read(0)**2 +
-                                            data_all_CPU.read(1)**2 +
-                                            data_all_CPU.read(2)**2 ))
-        rmsVel = np.sqrt(rmsVel/decomp.N)
+        #rmsVel = comms.parallel_sum(np.sum( data_all_CPU.read(0)**2 +
+        #                                    data_all_CPU.read(1)**2 +
+        #                                    data_all_CPU.read(2)**2 ))
+        #rmsVel = np.sqrt(rmsVel/decomp.N)
+        if (equationMode=='NS'):
+            # Compute the final divergence
+            metric.div_vel(state_u_P,state_v_P,state_w_P,source_P)
+            maxDivg = comms.parallel_max(torch.max(torch.abs(source_P)).cpu().numpy())
 
         # Update the time
         itCount += 1
@@ -658,12 +672,12 @@ for iterations in range(1):
         # Write stats
         if (equationMode=='NS'):
             if (decomp.rank==0):
-                lineStr = "  {:10d}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {: 8.3E}   {: 8.3E}"
-                print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW,rmsVel,int_RP,max_res_P))
+                lineStr = "  {:10d}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {: 8.3E}"
+                print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW,maxDivg,max_res_P))
         else:
             if (decomp.rank==0):
-                lineStr = "  {:10d}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}"
-                print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW,rmsVel))
+                lineStr = "  {:10d}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}"
+                print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW))
 
         # Write output
         if (np.mod(itCount,numItDataOut)==0):
