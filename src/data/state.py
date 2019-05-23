@@ -69,7 +69,7 @@ class data_all_CPU:
 
         # Sanity check
         if (len(state_data_all) != self.nvar):
-            print("ERROR: inconsistent state data")
+            raise Exception("\nState: inconsistent state data\n")
 
         # State data
         self.data = []

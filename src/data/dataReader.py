@@ -116,7 +116,7 @@ def readNGAconfig(fName):
 # --------------------------------------------------------
 # Read state data from a RESTART format data file
 # --------------------------------------------------------    
-def readNGArestart(fName,headerOnly=True):
+def readNGArestart(fName,headerOnly=True,printOut=True):
 
     with open(fName, 'rb') as f:
         # Read data sizes
@@ -141,7 +141,7 @@ def readNGArestart(fName,headerOnly=True):
                     names[ivar] += s.decode('UTF-8')
         
         # Print some file info
-        if (MPI.COMM_WORLD.Get_rank()==0):
+        if (MPI.COMM_WORLD.Get_rank()==0 and printOut):
             print(' ')
             print(' --> Importing state data from NGA restart file')
             print('   Data file name:    {}'.format(fName))
@@ -159,7 +159,8 @@ def readNGArestart(fName,headerOnly=True):
                 inData = arr.array('d')
                 inData.fromfile(f, nx*ny*nz)
                 data[:,:,:,ivar] = np.frombuffer(inData,dtype='f8').reshape((nx,ny,nz),order='F')
-                print('   --> Done reading {}'.format(names[ivar]))
+                if (printOut):
+                    print('   --> Done reading {}'.format(names[ivar]))
 
             return(names,time,data)
 
@@ -252,7 +253,7 @@ def readNGArestart_parallel(fName,data,ivar_read_start=None,nvar_read=None):
         
     # Decide how much data to read
     #  --> Be careful with options 2-4, as data.ivar is automatically
-    #      reset to zero. Useful to reading one variable at a time, but
+    #      reset to zero. Useful for reading one variable at a time, but
     #      potentially catastrophic if the entire dataset is necessary.
     if (ivar_read_start==None and nvar_read==None):
         # Read all the data

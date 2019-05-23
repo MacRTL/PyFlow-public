@@ -41,30 +41,6 @@ class stress_constCs:
 
         # External model type identifier
         self.modelType = 'eddyVisc'
-        
-        # Save pointers to some bits
-        #self.metric = metric
-        #prec = geo.prec
-
-        # Data sizes
-        #nx_  = geo.nx_
-        #ny_  = geo.ny_
-        #nz_  = geo.nz_
-        #nxo_ = geo.nxo_
-        #nyo_ = geo.nyo_
-        #nzo_ = geo.nzo_
-        #self.nover  = geo.nover
-        #self.imin_  = geo.imin_;  self.imax_  = geo.imax_
-        #self.jmin_  = geo.jmin_;  self.jmax_  = geo.jmax_
-        #self.kmin_  = geo.kmin_;  self.kmax_  = geo.kmax_
-        #self.imino_ = geo.imino_; self.imaxo_ = geo.imaxo_
-        #self.jmino_ = geo.jmino_; self.jmaxo_ = geo.jmaxo_
-        #self.kmino_ = geo.kmino_; self.kmaxo_ = geo.kmaxo_
-
-        # Allocate workspace arrays
-        #self.flux_x = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec).to(geo.device)
-        #self.flux_y = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec).to(geo.device)
-        #self.flux_z = torch.zeros(nx_+1,ny_+1,nz_+1,dtype=prec).to(geo.device)
 
         # Model parameters
         # Assuming uniform grid for now
