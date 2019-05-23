@@ -30,6 +30,7 @@
 # ------------------------------------------------------------------------
 
 import numpy as np
+import torch
 from scipy.sparse import diags
 
 # ------------------------------------------------------
@@ -71,18 +72,32 @@ class metric_uniform:
             self.interp_ym = 0.5
             self.interp_zm = 0.5
 
-            # Laplace operator
-            N = nx_*ny_*nz_
+            dx  = geo.dx ; dy  = geo.dy ; dz  = geo.dz 
             dxi = geo.dxi; dyi = geo.dyi; dzi = geo.dzi
-            # i,j,k; i-1,j,k; i+1,j,k; i,j-1,k; i,j+1,k; i,j,k-1; i,j,k+1
-            diagonals = [ -2*dxi*dxi - 2*dyi*dyi - 2*dzi*dzi,
-                          dxi*dxi, dxi*dxi,
-                          dyi*dyi, dyi*dyi,
-                          dzi*dzi, dzi*dzi ]
-            offsets = [0, -nx_*ny_, nx_*ny_, -nx_, nx_, -1, +1]
-            self.Laplace = diags(diagonals, offsets, shape=(N,N), dtype=geo.dtypeNumpy)
+            
+            # Cell volume
+            self.vol = dx*dy*dz
 
-            # MPI: update Laplace operator border
+            # Laplace operator
+            self.Laplace = torch.zeros(nxo_,nyo_,nzo_,3,3,dtype=geo.prec).to(geo.device)
+            # stc1=0, stc2=1
+            # x
+            self.Laplace[:,:,:,0,0].add_( dxi*dxi )
+            self.Laplace[:,:,:,0,1].add_( -2.0*dxi*dxi )
+            self.Laplace[:,:,:,0,2].add_( dxi*dxi )
+            # y
+            self.Laplace[:,:,:,1,0].add_( dyi*dyi )
+            self.Laplace[:,:,:,1,1].add_( -2.0*dyi*dyi )
+            self.Laplace[:,:,:,1,2].add_( dyi*dyi )
+            # z
+            self.Laplace[:,:,:,2,0].add_( dzi*dzi )
+            self.Laplace[:,:,:,2,1].add_( -2.0*dzi*dzi )
+            self.Laplace[:,:,:,2,2].add_( dzi*dzi )
+            
+            # Rescale the operator
+            self.Laplace.mul_( -1.0*self.vol )
+            
+            # Non-uniform grids: need to update Laplace operator border
             
         else:
             print("grid type not implemented")
@@ -256,7 +271,7 @@ class metric_uniform:
         state.grad_z[:,:,1:].copy_( state.var[:,:,1: ] )
         state.grad_z[:,:,1:].sub_ ( state.var[:,:,:-1] )
         state.grad_z[:,:,1:].mul_ ( self.grad_z )
-
+        
 
     # -------------------------------------------------
     # Divergence of the viscous flux
