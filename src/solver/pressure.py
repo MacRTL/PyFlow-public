@@ -230,7 +230,8 @@ class solver_bicgstab:
             # Step 1
             rho1 = self.comms.parallel_sum(torch.sum(self.res * self.res0).cpu().numpy())
             beta = alpha * rho1 / (rho2 * omega)
-            self.pp[imin_:imax_,jmin_:jmax_,kmin_:kmax_].sub_( omega * self.vv )
+            # pp = res + beta * ( pp - omega * vv )
+            self.pp[imin_:imax_,jmin_:jmax_,kmin_:kmax_].sub_( omega, self.vv )
             self.pp[imin_:imax_,jmin_:jmax_,kmin_:kmax_].mul_( beta )
             self.pp[imin_:imax_,jmin_:jmax_,kmin_:kmax_].add_( self.res )
 
@@ -243,8 +244,11 @@ class solver_bicgstab:
             gamma = self.comms.parallel_sum(torch.sum(self.vv * self.res0).cpu().numpy())
             # if gamma=0.0, exit
             alpha = rho1/gamma
-            state_DP_P.var.add_( alpha * self.pp )
-            self.s[imin_:imax_,jmin_:jmax_,kmin_:kmax_].copy_( self.res - alpha * self.vv )
+            # DP = DP + alpha * p_hat
+            state_DP_P.var.add_( alpha, self.pp )
+            # s = res - alpha * vv
+            self.s[imin_:imax_,jmin_:jmax_,kmin_:kmax_].copy_( self.res )
+            self.s[imin_:imax_,jmin_:jmax_,kmin_:kmax_].sub_( alpha, self.vv )
 
             # Precondition s here: s_hat = [P]s
 
@@ -257,11 +261,13 @@ class solver_bicgstab:
             buf2 = self.comms.parallel_sum(torch.sum(self.t * self.t).cpu().numpy())
             # if buf2==0, exit
             omega = buf1/buf2
-            state_DP_P.var.add_( omega * self.s )
+            # DP = DP + omega * s_hat
+            state_DP_P.var.add_( omega, self.s )
 
             # Update the residual
+            # res = s - omega * t
             self.res.copy_( self.s[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
-            self.res.sub_( omega * self.t )
+            self.res.sub_( omega, self.t )
             rho2 = rho1
 
             # Check convergence
