@@ -105,13 +105,19 @@ configName = "restart"
 # Data and config files to read
 if (configName=='restart'):
 
-    # Isotropic 128^3 DNS - verification vs. NGA
-    inFileDir     = '../../verification/dnsbox_128_Lx0.0056_NR/test_input_files/'
+    # Example case in git repository
+    inFileDir     = '../../examples/'
     configFileStr = inFileDir+'config_dnsbox_128_Lx0.0056'
-    dataFileBStr  = inFileDir+'dnsbox_128_128_Lx0.0056.1_5.00000E-04'
-    dataFileStr   = inFileDir+'data_dnsbox_128_Lx0.0056.1_5.00000E-04'
+    dataFileBStr  = inFileDir+'dnsbox_128_128_Lx0.0056.1_2.50000E-04'
+    dataFileStr   = inFileDir+'data_dnsbox_128_Lx0.0056.1_2.50000E-04'
     dataFileType  = 'restart'
-    #simDt         = 1.25e-6
+
+    # Isotropic 128^3 DNS - verification vs. NGA
+    #inFileDir     = '../../verification/dnsbox_128_Lx0.0056_NR/test_input_files/'
+    #configFileStr = inFileDir+'config_dnsbox_128_Lx0.0056'
+    #dataFileBStr  = inFileDir+'dnsbox_128_128_Lx0.0056.1_5.00000E-04'
+    #dataFileStr   = inFileDir+'data_dnsbox_128_Lx0.0056.1_5.00000E-04'
+    #dataFileType  = 'restart'
 
     # Downsampled 1024^3 DNS - needs SGS model
     #inFileDir     = '../../input/downsampled_LES_restart/dnsbox_1024_Lx0.045_NR_run_2/restart_1024_Lx0.045_NR_Delta16_Down16/'
@@ -127,11 +133,11 @@ fNameOut     = 'data_dnsbox_128_Lx0.0056'
 numItDataOut = 20
 
 # Parallel decomposition
-nproc_x = 2
+nproc_x = 1
 nproc_y = 1
 nproc_z = 1
 
-# Model constants
+# Physical constants
 mu  = 1.8678e-5
 rho = 1.2
 
@@ -140,26 +146,28 @@ simDt        = 1.0e-6
 numIt        = 50
 startTime    = 0.0
 
-# SFS model
+# SFS model settings
 #   SFSmodel options: none, Smagorinsky, gradient, nn
 SFSmodel = 'none'
 #SFSmodel = 'Smagorinsky'; Cs = 0.18; expFilterFac = 1.0;
-#SFSmodel = 'gradient'
 
 # Solver settings
-#   solverName options:   Euler, RK4
+#   advancerName options: Euler, RK4
 #   equationMode options: scalar, NS
 #   pSolverMode options:  Jacobi, bicgstab (Krylov subspace)
 #
-solverName   = "RK4"
+advancerName = "RK4"
 equationMode = "NS"
+#
+# Pressure solver settings
+pSolverMode             = "bicgstab"
+min_pressure_residual   = 1e-9
+max_pressure_iterations = 150
+#
+# Accuracy and precision settings
 genericOrder = 2
 dtypeTorch   = torch.float64
 dtypeNumpy   = np.float64
-#pSolverMode  = "Jacobi"
-pSolverMode  = "bicgstab"
-min_pressure_residual   = 1e-9
-max_pressure_iterations = 150
 
 # Output options
 plotState    = False
@@ -167,7 +175,6 @@ numItPlotOut = 20
 
 # Comparison options
 useTargetData = False
-#useTargetData = True
 if (useTargetData):
     targetFileBaseStr  = dataFileBStr
     numItTargetComp = 50
@@ -371,7 +378,7 @@ state_data_all = (state_u_P, state_v_P, state_w_P, state_p_P)
 data_all_CPU   = state.data_all_CPU(decomp,startTime,simDt,names[0:4],state_data_all)
 
 # Need a temporary velocity state for RK solvers
-if (solverName[:-1]=="RK"):
+if (advancerName[:-1]=="RK"):
     state_uTmp_P = state.state_P(decomp,IC_u_np)
     state_vTmp_P = state.state_P(decomp,IC_v_np)
     state_wTmp_P = state.state_P(decomp,IC_w_np)
@@ -405,7 +412,7 @@ if (equationMode=='scalar'):
 
     # Allocate RHS objects
     rhs1 = velocity.rhs_scalar(decomp,uMax,vMax,wMax)
-    if (solverName[:-1]=="RK"):
+    if (advancerName[:-1]=="RK"):
         rhs2 = velocity.rhs_scalar(decomp,uMax,vMax,wMax)
         rhs3 = velocity.rhs_scalar(decomp,uMax,vMax,wMax)
         rhs4 = velocity.rhs_scalar(decomp,uMax,vMax,wMax)
@@ -414,11 +421,11 @@ elif (equationMode=='NS'):
     # Navier-Stokes equations
     if (decomp.rank==0):
         print("\nSolving Navier-Stokes equations")
-        print("Solver settings: advancer={}, pressure={}".format(solverName,pSolverMode))
+        print("Solver settings: advancer={}, pressure={}".format(advancerName,pSolverMode))
 
     # Allocate RHS objects    
     rhs1 = velocity.rhs_NavierStokes(decomp)
-    if (solverName[:-1]=="RK"):
+    if (advancerName[:-1]=="RK"):
         rhs2 = velocity.rhs_NavierStokes(decomp)
         rhs3 = velocity.rhs_NavierStokes(decomp)
         rhs4 = velocity.rhs_NavierStokes(decomp)
@@ -576,7 +583,7 @@ for iterations in range(1):
                     raise Exception('PyFlow: SFS model type not implemented')
                 
         # Compute velocity prediction
-        if (solverName=="Euler"):
+        if (advancerName=="Euler"):
             # rhs
             rhs1.evaluate(state_u_P,state_v_P,state_w_P,VISC_P,rho,sfsmodel,metric)
 
@@ -585,7 +592,7 @@ for iterations in range(1):
             state_v_P.var = state_v_P.var + rhs1.rhs_v*simDt
             state_w_P.var = state_w_P.var + rhs1.rhs_w*simDt
 
-        elif (solverName=="RK4"):
+        elif (advancerName=="RK4"):
             
             # Stage 1
             rhs1.evaluate(state_u_P,state_v_P,state_w_P,VISC_P,rho,sfsmodel,metric)

@@ -276,6 +276,7 @@ class solver_bicgstab:
                 done = True
 
             #print("{} max_res={:15.7E}".format(iter,max_res))
+            # done while loop
 
         # Update the pressure state
         state_DP_P.update_border()
