@@ -31,7 +31,6 @@
 
 import numpy as np
 import torch
-from scipy.sparse import diags
 
 # ------------------------------------------------------
 # Staggered central-difference schemes for uniform grids

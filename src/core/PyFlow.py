@@ -34,17 +34,17 @@
 
 import numpy as np
 import sys
-sys.path.insert(0, "/mnt/bwpy/single/usr/lib/python3.5/site-packages")
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.autograd import Variable
-sys.path.pop(0)
 
 import time
 import copy
 import os
+
+import resource
 
 # Load PyFlow modules
 sys.path.append("../data")
@@ -64,9 +64,10 @@ import metric_staggered
 sys.path.append("../solver")
 import velocity
 import pressure
+import adjoint
 #
 sys.path.append("../sfsmodel")
-import sfsmodel_nn
+import sfsmodel_ML
 import sfsmodel_smagorinsky
 import sfsmodel_gradient
 
@@ -147,14 +148,19 @@ numIt        = 50
 startTime    = 0.0
 
 # SFS model settings
-#   SFSmodel options: none, Smagorinsky, gradient, nn
-SFSmodel = 'none'
+#   SFSmodel options: none, Smagorinsky, gradient, ML
+#SFSmodel = 'none'
 #SFSmodel = 'Smagorinsky'; Cs = 0.18; expFilterFac = 1.0;
+SFSmodel = 'ML'; modelDictName = 'test_model'
+
+# Adjoint training settings
+adjointTraining    = True
+checkpointInterval = 10
 
 # Solver settings
 #   advancerName options: Euler, RK4
 #   equationMode options: scalar, NS
-#   pSolverMode options:  Jacobi, bicgstab (Krylov subspace)
+#   pSolverMode options:  Jacobi, bicgstab
 #
 advancerName = "RK4"
 equationMode = "NS"
@@ -364,7 +370,6 @@ IC_ones_np  = np.ones ( (nx_,ny_,nz_) )
 # ----------------------------------------------------
 # Allocate memory for state data
 # ----------------------------------------------------
-
 # Allocate state data using PyTorch variables
 state_u_P    = state.state_P(decomp,IC_u_np)
 state_v_P    = state.state_P(decomp,IC_v_np)
@@ -388,13 +393,41 @@ source_P = torch.zeros(nx_,ny_,nz_,dtype=dtypeTorch).to(device)
 VISC_P   = torch.ones(nxo_,nyo_,nzo_,dtype=dtypeTorch).to(device)
 VISC_P.mul_(mu)
 
-# SFS model
+
+# ----------------------------------------------------
+# Set up adjoint training
+# ----------------------------------------------------
+if (adjointTraining):
+    # Check for a few prerequisites
+    if (SFSmodel!="ML"):
+        raise Exception("\nAdjoint training requires ML subfilter model\n")
+    elif (equationMode!="NS"):
+        raise Exception("\nAdjoint training requires Navier-Stokes solver\n")
+    else:
+        # Allocate the adjoint state
+        #   Do we need gradients of the adjoint state?
+        state_u_adj_P = state.state_P(decomp,IC_zeros_np)
+        state_v_adj_P = state.state_P(decomp,IC_zeros_np)
+        state_w_adj_P = state.state_P(decomp,IC_zeros_np)
+        
+        # Allocate space for checkpointed solutions
+        check_u_P = torch.zeros(nx_,ny_,nz_,checkpointInterval,dtype=dtypeTorch).to(device)
+        check_v_P = torch.zeros(nx_,ny_,nz_,checkpointInterval,dtype=dtypeTorch).to(device)
+        check_w_P = torch.zeros(nx_,ny_,nz_,checkpointInterval,dtype=dtypeTorch).to(device)
+
+
+# ----------------------------------------------------
+# Set up SFS model
+# ----------------------------------------------------
 if (SFSmodel=='Smagorinsky'):
     use_SFSmodel = True
     sfsmodel = sfsmodel_smagorinsky.stress_constCs(geometry,metric,Cs,expFilterFac)
 elif (SFSmodel=='gradient'):
     use_SFSmodel = True
-    sfsmodel = sfsmodel_gradient.residual_stress(decomp,geometry,metric)
+    sfsmodel = sfsmodel_gradient.residual_stress(decomp,geometry,metric,modelDictName)
+elif (SFSmodel=='ML'):
+    use_SFSmodel = True
+    sfsmodel = sfsmodel_ML.residual_stress(decomp,geometry,metric)
 else:
     # Construct a blank SFSmodel object
     use_SFSmodel = False
@@ -404,7 +437,10 @@ else:
 if (sfsmodel.modelType=='eddyVisc'):
     muMolec = mu
 
-# Switch for different solver types
+    
+# ----------------------------------------------------
+# Set up solver
+# ----------------------------------------------------
 if (equationMode=='scalar'):
     # Scalar advection-diffusion equations
     if (decomp.rank==0):
@@ -439,7 +475,7 @@ elif (equationMode=='NS'):
                                            min_pressure_residual,max_pressure_iterations)
     if (pSolverMode=='RedBlackGS'):
         #poisson = pressure.solver_GS_redblack(geometry,rho,simDt,max_pressure_iterations)
-        raise Exception('\Red-black GS not yet implemented\n')
+        raise Exception('\nRed-black GS not yet implemented\n')
         
 else:
     if (decomp.rank==0):
@@ -464,7 +500,7 @@ if (useTargetData):
     target_data_all = (state_u_T, state_v_T, state_w_T)
     target_data_all_CPU = state.data_all_CPU(decomp,startTime,simDt,names[0:3],target_data_all)
     dr.readNGArestart_parallel(dataFileStr,target_data_all_CPU)
-    print(target_data_all_CPU.read(0)[0,0,0])
+    #print(target_data_all_CPU.read(0)[0,0,0])
 
     
 #    # Read target data file
@@ -494,6 +530,10 @@ del data_IC
 # ----------------------------------------------------
 # Simulation loop
 # ----------------------------------------------------
+
+# Repurpose this loop for adjoint-solution checkpointing
+# checkpointInterval, etc.
+
 for iterations in range(1):
     
     time1 = time.time()

@@ -93,7 +93,7 @@ class data_all_CPU:
 # Base class for state data
 # ----------------------------------------------------
 class state_P:
-    def __init__(self,decomp,IC=None):
+    def __init__(self,decomp,IC=None,need_gradients=True):
         # Defaults: zero initial conditions
 
         # Save a pointer to the decomposition object
@@ -121,9 +121,10 @@ class state_P:
         # Interpolated state data
         self.var_i    = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(decomp.device)
         # First derivatives
-        self.grad_x   = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(decomp.device)
-        self.grad_y   = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(decomp.device)
-        self.grad_z   = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(decomp.device)
+        if (need_gradients):
+            self.grad_x   = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(decomp.device)
+            self.grad_y   = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(decomp.device)
+            self.grad_z   = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(decomp.device)
 
         # Copy initial conditions into the data tensor
         if (IC.any()):
