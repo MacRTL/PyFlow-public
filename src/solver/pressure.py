@@ -223,6 +223,7 @@ class solver_bicgstab:
         omega = 1.0
         iter  = 0
         done  = False
+        max_res = 0.0
 
         # Iterate
         while not done:
@@ -243,6 +244,8 @@ class solver_bicgstab:
             # Step 2
             gamma = self.comms.parallel_sum(torch.sum(self.vv * self.res0).cpu().numpy())
             # if gamma=0.0, exit
+            if (gamma==0.0):
+                break
             alpha = rho1/gamma
             # DP = DP + alpha * p_hat
             state_DP_P.var.add_( alpha, self.pp )
@@ -260,6 +263,8 @@ class solver_bicgstab:
                                                      * self.t).cpu().numpy())
             buf2 = self.comms.parallel_sum(torch.sum(self.t * self.t).cpu().numpy())
             # if buf2==0, exit
+            if (buf2==0):
+                break
             omega = buf1/buf2
             # DP = DP + omega * s_hat
             state_DP_P.var.add_( omega, self.s )
