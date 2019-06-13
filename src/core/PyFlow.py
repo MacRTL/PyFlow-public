@@ -652,9 +652,9 @@ for itCountOuter in range(numStepsOuter):
                 VISC_P.copy_( muMolec + muEddy )
             elif (sfsmodel.modelType=='tensor'):
                 sfsmodel.update(state_u_P,state_v_P,state_w_P,metric)
-            else:
-                if (decomp.rank==0):
-                    raise Exception('\nPyFlow: SFS model type not implemented\n')
+            # --> Source-type models: evaluate inside the RHS
+            #elif (sfsmodel.modelType=='source'):
+            #    sfsmodel.update(state_u_P,state_v_P,state_w_P,metric)
                 
         # Compute velocity prediction
         if (advancerName=="Euler"):

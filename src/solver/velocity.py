@@ -299,3 +299,13 @@ class rhs_NavierStokes:
         metric.interp_w_zm(state_w)
         metric.vel_conv_zz(state_w,state_w,self.rhs_w)
 
+        
+        # Source-type SFS models, including ML models
+        if (sfsmodel.modelType=='source'):
+            # Update the model
+            sfsmodel.update(state_u.var,state_v.var,state_w.var,metric)
+
+            # Accumulate to RHS   --> should this be + or -?
+            self.rhs_u.sub_( sfsmodel.GX )
+            self.rhs_v.sub_( sfsmodel.GY )
+            self.rhs_w.sub_( sfsmodel.GZ )

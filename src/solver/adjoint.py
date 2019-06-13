@@ -32,6 +32,7 @@
 import numpy as np
 import torch
 import sys
+from torch.autograd import Variable
 
 # ----------------------------------------------------
 # Navier-Stokes adjoint equation RHS
@@ -278,6 +279,21 @@ class rhs_adjPredictor:
 
         # Closure model terms -- delta^t
 
-        # Evaluate the SFS model using PyTorch automatic differentiation
         # Enable computational graph generation
+        u_V = Variable( state_u.var, requires_grad=True )
+        v_V = Variable( state_v.var, requires_grad=True )
+        w_V = Variable( state_w.var, requires_grad=True )
+        
+        # Evaluate the SFS model using PyTorch automatic differentiation
         # Gradients in model inputs need to be computed using non-in-place operations
+        #sfsmodel.update(u_V,v_V,w_V,metric)
+
+        # Accumulate the SFS model to the adjoint equation RHS
+        self.rhs_u.add_( sfsmodel.GX )
+        self.rhs_v.add_( sfsmodel.GY )
+        self.rhs_w.add_( sfsmodel.GZ )
+
+        # Clean up
+        del u_V
+        del v_V
+        del w_V
