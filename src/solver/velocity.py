@@ -169,6 +169,10 @@ class rhs_NavierStokes:
     # ----------------------------------------------------
     # Evaluate the RHS
     def evaluate(self,state_u,state_v,state_w,VISC,rho,sfsmodel,metric):
+        imin_ = metric.imin_; imax_ = metric.imax_+1
+        jmin_ = metric.jmin_; jmax_ = metric.jmax_+1
+        kmin_ = metric.kmin_; kmax_ = metric.kmax_+1
+        
         # Zero the rhs
         self.rhs_u.zero_()
         self.rhs_v.zero_()
@@ -302,10 +306,28 @@ class rhs_NavierStokes:
         
         # Source-type SFS models, including ML models
         if (sfsmodel.modelType=='source'):
-            # Update the model
-            sfsmodel.update(state_u.var,state_v.var,state_w.var,metric)
+            # Use interpolated variables
+            #   --> ML model can be improved by using staggered derivatives internally
+            metric.interp_u_xm( state_u )
+            metric.interp_v_ym( state_v )
+            metric.interp_w_zm( state_w )
+            
+            # Evaluate the model
+            sfsmodel.update(state_u.var_i,state_v.var_i,state_w.var_i,metric)
 
-            # Accumulate to RHS   --> should this be + or -?
-            self.rhs_u.sub_( sfsmodel.GX )
-            self.rhs_v.sub_( sfsmodel.GY )
-            self.rhs_w.sub_( sfsmodel.GZ )
+            # Interpolate source terms to cell faces and accumulate to the RHS
+            #  --> [JFM] should accumulation be + or -?
+            # x
+            metric.interp_sc_x( sfsmodel.GX[:,:,:,0], self.interp_SC )
+            self.rhs_u.sub_( self.interp_SC[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+            # y
+            metric.interp_sc_y( sfsmodel.GY[:,:,:,0], self.interp_SC )
+            self.rhs_v.sub_( self.interp_SC[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+            # z
+            metric.interp_sc_z( sfsmodel.GZ[:,:,:,0], self.interp_SC )
+            self.rhs_w.sub_( self.interp_SC[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+            
+            # Accumulate to RHS   
+            #self.rhs_u.sub_( sfsmodel.GX[imin_:imax_,jmin_:jmax_,kmin_:kmax_,0] )
+            #self.rhs_v.sub_( sfsmodel.GY[imin_:imax_,jmin_:jmax_,kmin_:kmax_,0] )
+            #self.rhs_w.sub_( sfsmodel.GZ[imin_:imax_,jmin_:jmax_,kmin_:kmax_,0] )

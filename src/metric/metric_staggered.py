@@ -103,6 +103,21 @@ class metric_uniform:
 
 
     # -----------------------------------------------
+    # Interpolation of a scalar to x-faces
+    def interp_sc_x(self,SC,interp_SC):
+        interp_SC[1:,:,:].copy_(self.interp_x*( SC[1:,:,:] + SC[:-1,:,:] ))
+                                
+    # -----------------------------------------------
+    # Interpolation of a scalar to y-faces
+    def interp_sc_y(self,SC,interp_SC):
+        interp_SC[:,1:,:].copy_(self.interp_y*( SC[:,1:,:] + SC[:,:-1,:] ))
+                                
+    # -----------------------------------------------
+    # Interpolation of a scalar to z-faces
+    def interp_sc_z(self,SC,interp_SC):
+        interp_SC[:,:,1:].copy_(self.interp_z*( SC[:,:,1:] + SC[:,:,:-1] ))
+
+    # -----------------------------------------------
     # Interpolation of a scalar to xy-edges
     def interp_sc_xy(self,SC,interp_SC):
         interp_SC[1:,1:,:].copy_(self.interp_x*self.interp_y*( SC[1:,1: ,:] + SC[:-1,1: ,:] +

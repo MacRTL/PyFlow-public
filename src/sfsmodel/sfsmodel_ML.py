@@ -70,6 +70,7 @@ class ClosureModel2(nn.Module):
 
 # Number of hidden units
 H = 200
+
 #num_inputs = 21 + 6*12
 num_inputs = 21 + 12*12
 
@@ -136,16 +137,9 @@ class residual_stress:
         nzo_ = decomp.nzo_
 
         # Allocate workspace arrays
-        self.GX = torch.zeros(nxo_,nyo_,nzo_,dtype=self.prec).to(decomp.device)
-        self.GY = torch.zeros(nxo_,nyo_,nzo_,dtype=self.prec).to(decomp.device)
-        self.GZ = torch.zeros(nxo_,nyo_,nzo_,dtype=self.prec).to(decomp.device)
-        #self.FXX = torch.zeros(nxo_,nyo_,nzo_,dtype=self.prec).to(decomp.device)
-        #self.FYY = torch.zeros(nxo_,nyo_,nzo_,dtype=self.prec).to(decomp.device)
-        #self.FZZ = torch.zeros(nxo_,nyo_,nzo_,dtype=self.prec).to(decomp.device)
-        #self.FXY = torch.zeros(nxo_,nyo_,nzo_,dtype=self.prec).to(decomp.device)
-        #self.FYZ = torch.zeros(nxo_,nyo_,nzo_,dtype=self.prec).to(decomp.device)
-        #self.FXZ = torch.zeros(nxo_,nyo_,nzo_,dtype=self.prec).to(decomp.device)
-        #self.tmp = torch.zeros(nxo_,nyo_,nzo_,dtype=self.prec).to(decomp.device)
+        self.GX = torch.zeros(nxo_,nyo_,nzo_,1,dtype=self.prec).to(decomp.device)
+        self.GY = torch.zeros(nxo_,nyo_,nzo_,1,dtype=self.prec).to(decomp.device)
+        self.GZ = torch.zeros(nxo_,nyo_,nzo_,1,dtype=self.prec).to(decomp.device)
 
         # Filter width
         if (geo.type=='uniform'):
@@ -183,7 +177,7 @@ class residual_stress:
         
     # ----------------------------------------------------
     # Evaluate the model
-    def update(self,u_P,v_P,w_P,metric):
+    def update(self,u_P,v_P,w_P,metric,requires_grad=False):
 
         # Set precision for ML model evaluation
         float_u_P = u_P.type(torch.FloatTensor)
@@ -202,11 +196,18 @@ class residual_stress:
                                       v_x_P, v_y_P, v_z_P, w_x_P, w_y_P, w_z_P,
                                       u_xx_P, u_yy_P, u_zz_P, v_xx_P, v_yy_P,
                                       v_zz_P, w_xx_P, w_yy_P, w_zz_P), 3 )
+        #print(self.GX.size())
         
         # Evaluate the ML model
         Closure_u_P,Closure_v_P,Closure_w_P = self.ML_Closure(ML_input_data,self.model,
                                                               self.Constant_norm_P)
-
+        
+        # Detach the closure model from the computational graph
+        if (not requires_grad):
+            Closure_u_P = Closure_u_P.detach()
+            Closure_v_P = Closure_v_P.detach()
+            Closure_w_P = Closure_w_P.detach()
+            
         # Update the residual stress source term
         if (self.prec==torch.float64):
             self.GX = Closure_u_P.type(torch.DoubleTensor) # self.GX.copy_() ?
@@ -218,8 +219,9 @@ class residual_stress:
             self.GZ = Closure_w_P.type(torch.FloatTensor)
         
         # Clean up
-        del ML_input_data        
+        del ML_input_data
 
+        #print(self.GX.size())
         
         
     # -----------------------------------------------------
@@ -325,7 +327,7 @@ class residual_stress:
         #input_data2 = input_data/Constant_norm_P
 
 
-        model_output = model_in( input_data2)
+        model_output = model_in( input_data2 )
 
         p_N = model_output
 

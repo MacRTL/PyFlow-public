@@ -107,11 +107,11 @@ configName = "restart"
 if (configName=='restart'):
 
     # Example case in git repository
-    inFileDir     = '../../examples/'
-    configFileStr = inFileDir+'config_dnsbox_128_Lx0.0056'
-    dataFileBStr  = inFileDir+'dnsbox_128_128_Lx0.0056.1_2.50000E-04'
-    dataFileStr   = inFileDir+'data_dnsbox_128_Lx0.0056.1_2.50000E-04'
-    dataFileType  = 'restart'
+    #inFileDir     = '../../examples/'
+    #configFileStr = inFileDir+'config_dnsbox_128_Lx0.0056'
+    #dataFileBStr  = inFileDir+'dnsbox_128_128_Lx0.0056.1_2.50000E-04'
+    #dataFileStr   = inFileDir+'data_dnsbox_128_Lx0.0056.1_2.50000E-04'
+    #dataFileType  = 'restart'
 
     # Isotropic 128^3 DNS - verification vs. NGA
     #inFileDir     = '../../verification/dnsbox_128_Lx0.0056_NR/test_input_files/'
@@ -121,16 +121,16 @@ if (configName=='restart'):
     #dataFileType  = 'restart'
 
     # Downsampled 1024^3 DNS - needs SGS model
-    #inFileDir     = '../../input/downsampled_LES_restart/dnsbox_1024_Lx0.045_NR_run_2/restart_1024_Lx0.045_NR_Delta16_Down16/'
-    #configFileStr = inFileDir+'config_dnsbox_1024_Lx0.045_NR_Delta16_Down16_0000'
-    #dataFileBStr  = inFileDir+'dnsbox_1024_Lx0.045_NR_Delta16_Down16_000000'
-    #startFileIt   = 20
-    #dataFileStr   = dataFileBStr + str(startFileIt)
-    #dataFileType  = 'restart'
+    inFileDir     = '../../input/downsampled_LES_restart/dnsbox_1024_Lx0.045_NR_run_2/restart_1024_Lx0.045_NR_Delta16_Down16/'
+    configFileStr = inFileDir+'config_dnsbox_1024_Lx0.045_NR_Delta16_Down16_0000'
+    dataFileBStr  = inFileDir+'dnsbox_1024_Lx0.045_NR_Delta16_Down16_000000'
+    startFileIt   = 20
+    dataFileStr   = dataFileBStr + str(startFileIt)
+    dataFileType  = 'restart'
 
 # Data file to write
-fNameOut     = 'data_dnsbox_128_Lx0.0056'
-#fNameOut     = 'dnsbox_1024_Lx0.045_NR_Delta16_Down16_00000020'
+#fNameOut     = 'data_dnsbox_128_Lx0.0056'
+fNameOut     = 'dnsbox_1024_Lx0.045_NR_Delta16_Down16_00000020'
 numItDataOut = 20
 
 # Parallel decomposition
@@ -410,6 +410,10 @@ if (adjointTraining):
         state_u_adj_P = state.state_P(decomp,IC_zeros_np)
         state_v_adj_P = state.state_P(decomp,IC_zeros_np)
         state_w_adj_P = state.state_P(decomp,IC_zeros_np)
+
+        # Set up a Numpy mirror to the PyTorch adjoint state
+        adjoint_data_all = (state_u_adj_P, state_v_adj_P, state_w_adj_P)
+        data_adj_CPU = state.data_all_CPU(decomp,startTime,simDt,names[0:3],adjoint_data_all)
 
         # Initialize the adjoint RHS object
         adj_rhs1 = adjoint.rhs_adjPredictor(decomp)
@@ -775,7 +779,7 @@ for itCountOuter in range(numStepsOuter):
         # Write stats
         if (equationMode=='NS'):
             if (decomp.rank==0):
-                lineStr = "  {:10d}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {: 8.3E}   {: 8.3E}"
+                lineStr = "  {:10d}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}    {:8.3E}"
                 print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW,TKE,maxDivg,max_resP))
         else:
             if (decomp.rank==0):
@@ -900,11 +904,18 @@ for itCountOuter in range(numStepsOuter):
             # Update the counters
             itCountInner -= 1
             simTime -= simDt
+            
+            # Compute stats
+            maxU = comms.parallel_max(data_adj_CPU.absmax(0))
+            maxV = comms.parallel_max(data_adj_CPU.absmax(1))
+            maxW = comms.parallel_max(data_adj_CPU.absmax(2))
+            maxCFL = max((maxU/geometry.dx,maxV/geometry.dy,maxW/geometry.dz))*simDt
 
             # Print stats
             if (decomp.rank==0):
-                lineStr = "  Adj {:6d}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {: 8.3E}   {: 8.3E}"
-                print(lineStr.format(itCount-itCountInner,simTime,maxCFL,maxU,maxV,maxW,TKE,maxDivg,max_resP))
+                lineStr = "  Adj {:6d}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:9s}   {:9s}    {:8.3E}"
+                print(lineStr.format(itCount-itCountInner,simTime,maxCFL,maxU,maxV,maxW,
+                                     ' ',' ',max_resP))
                 
                 # Resource utilization
                 mem_usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
