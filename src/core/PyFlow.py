@@ -134,7 +134,7 @@ fNameOut     = 'data_dnsbox_128_Lx0.0056'
 numItDataOut = 20
 
 # Parallel decomposition
-nproc_x = 1
+nproc_x = 2
 nproc_y = 1
 nproc_z = 1
 
@@ -154,8 +154,8 @@ startTime    = 0.0
 SFSmodel = 'ML'; modelDictName = 'test_model'
 
 # Adjoint training settings
-adjointTraining    = True
-checkpointInterval = 10
+adjointTraining = True
+numCheckpointIt = 2
 
 # Solver settings
 #   advancerName options: Euler, RK4
@@ -168,7 +168,7 @@ equationMode = "NS"
 # Pressure solver settings
 pSolverMode             = "bicgstab"
 min_pressure_residual   = 1e-9
-max_pressure_iterations = 150
+max_pressure_iterations = 50 #150
 #
 # Accuracy and precision settings
 genericOrder = 2
@@ -400,20 +400,27 @@ VISC_P.mul_(mu)
 if (adjointTraining):
     # Check for a few prerequisites
     if (SFSmodel!="ML"):
-        raise Exception("\nAdjoint training requires ML subfilter model\n")
+        if (decomp.rank==0):
+            raise Exception("\nAdjoint training requires ML subfilter model\n")
     elif (equationMode!="NS"):
-        raise Exception("\nAdjoint training requires Navier-Stokes solver\n")
+        if (decomp.rank==0):
+            raise Exception("\nAdjoint training requires Navier-Stokes solver\n")
     else:
         # Allocate the adjoint state
-        #   Do we need gradients of the adjoint state?
         state_u_adj_P = state.state_P(decomp,IC_zeros_np)
         state_v_adj_P = state.state_P(decomp,IC_zeros_np)
         state_w_adj_P = state.state_P(decomp,IC_zeros_np)
+
+        # Initialize the adjoint RHS object
+        adj_rhs1 = adjoint.rhs_adjPredictor(decomp)
         
         # Allocate space for checkpointed solutions
-        check_u_P = torch.zeros(nx_,ny_,nz_,checkpointInterval,dtype=dtypeTorch).to(device)
-        check_v_P = torch.zeros(nx_,ny_,nz_,checkpointInterval,dtype=dtypeTorch).to(device)
-        check_w_P = torch.zeros(nx_,ny_,nz_,checkpointInterval,dtype=dtypeTorch).to(device)
+        #  --> Could be moved to adjoint module
+        check_u_P = torch.zeros(nxo_,nyo_,nzo_,numCheckpointIt+1,dtype=dtypeTorch).to(device)
+        check_v_P = torch.zeros(nxo_,nyo_,nzo_,numCheckpointIt+1,dtype=dtypeTorch).to(device)
+        check_w_P = torch.zeros(nxo_,nyo_,nzo_,numCheckpointIt+1,dtype=dtypeTorch).to(device)
+
+        # Set up target data {JFM FINISH}
 
 
 # ----------------------------------------------------
@@ -424,10 +431,10 @@ if (SFSmodel=='Smagorinsky'):
     sfsmodel = sfsmodel_smagorinsky.stress_constCs(geometry,metric,Cs,expFilterFac)
 elif (SFSmodel=='gradient'):
     use_SFSmodel = True
-    sfsmodel = sfsmodel_gradient.residual_stress(decomp,geometry,metric,modelDictName)
+    sfsmodel = sfsmodel_gradient.residual_stress(decomp,geometry,metric)
 elif (SFSmodel=='ML'):
     use_SFSmodel = True
-    sfsmodel = sfsmodel_ML.residual_stress(decomp,geometry,metric)
+    sfsmodel = sfsmodel_ML.residual_stress(decomp,geometry,metric,modelDictName)
 else:
     # Construct a blank SFSmodel object
     use_SFSmodel = False
@@ -528,82 +535,109 @@ del data_IC
 
 
 # ----------------------------------------------------
-# Simulation loop
+# Pre-simulation loop monitoring tasks 
 # ----------------------------------------------------
-
-# Repurpose this loop for adjoint-solution checkpointing
-# checkpointInterval, etc.
-
-for iterations in range(1):
     
-    time1 = time.time()
+#for param_group in optimizer.param_groups:
+#        param_group['lr'] = 0.1*LR
     
-    #for param_group in optimizer.param_groups:
-    #        param_group['lr'] = 0.1*LR
-    
-    #optimizer.zero_grad()
+#optimizer.zero_grad()
 
-    #u_P = Variable( torch.FloatTensor( IC_u_np ) )
-    #v_P = Variable( torch.FloatTensor( IC_v_np ) )
-    #
-    Loss = 0.0
+#u_P = Variable( torch.FloatTensor( IC_u_np ) )
+#v_P = Variable( torch.FloatTensor( IC_v_np ) )
+#
+Loss = 0.0
 
-    # Iteration counter and simulation time
-    itCount  = 0
-    simTime  = startTime
-    stopTime = startTime + numIt*simDt
+# Simulation time
+simTime  = startTime
+stopTime = startTime + numIt*simDt
 
-    # Write the stdout header
-    if (equationMode=='NS'):
-        if (decomp.rank==0):
-            headStr = "  {:10s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}"
-            print(headStr.format("Step","Time","max CFL","max U","max V","max W","TKE","divergence","max res_P"))
-    else:
-        if (decomp.rank==0):
-            headStr = "  {:10s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}"
-            print(headStr.format("Step","Time","max CFL","max U","max V","max W"))
+# Synchronize the overlap cells before stepping
+state_u_P.update_border()
+state_v_P.update_border()
+state_w_P.update_border()
+state_p_P.update_border()
 
-    # Synchronize the overlap cells before stepping
-    state_u_P.update_border()
-    state_v_P.update_border()
-    state_w_P.update_border()
-    state_p_P.update_border()
+# Write the initial data file
+timeStr = "{:12.7E}".format(simTime)
+if (decomp.rank==0):
+    dr.writeNGArestart(fNameOut+'_'+timeStr,data_all_CPU,True)
+dr.writeNGArestart_parallel(fNameOut+'_'+timeStr,data_all_CPU)
 
-    # Write the initial data file
-    timeStr = "{:12.7E}".format(simTime)
+# Write the stdout header
+if (equationMode=='NS'):
     if (decomp.rank==0):
-        dr.writeNGArestart(fNameOut+'_'+timeStr,data_all_CPU,True)
-    dr.writeNGArestart_parallel(fNameOut+'_'+timeStr,data_all_CPU)
-
-    # Compute resolved kinetic energy and velocity rms
-    initEnergy = comms.parallel_sum(np.sum( data_all_CPU.read(0)**2 +
-                                            data_all_CPU.read(1)**2 +
-                                            data_all_CPU.read(2)**2 ))
-    #rmsVel = np.sqrt(initEnergy/decomp.N)
-    if (equationMode=='NS'):
-        # Compute the initial divergence
-        metric.div_vel(state_u_P,state_v_P,state_w_P,source_P)
-        maxDivg = comms.parallel_max(torch.max(torch.abs(source_P)).cpu().numpy())
-    
-    # Write initial condition stats
-    maxU = comms.parallel_max(data_all_CPU.absmax(0))
-    maxV = comms.parallel_max(data_all_CPU.absmax(1))
-    maxW = comms.parallel_max(data_all_CPU.absmax(2))
-    TKE  = comms.parallel_sum(np.sum( data_all_CPU.read(0)**2 +
-                                      data_all_CPU.read(1)**2 +
-                                      data_all_CPU.read(2)**2 ))*0.5/float(decomp.N)
+        headStr = "  {:10s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}"
+        print(headStr.format("Step","Time","max CFL","max U","max V","max W","TKE","divergence","max res_P"))
+else:
     if (decomp.rank==0):
-        maxCFL = max((maxU/geometry.dx,maxV/geometry.dy,maxW/geometry.dz))*simDt
-        lineStr = "  {:10d}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}"
-        print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW,TKE,maxDivg))
+        headStr = "  {:10s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}"
+        print(headStr.format("Step","Time","max CFL","max U","max V","max W"))
 
-    if (plotState):
-        timeStr = "{:12.7E}_{}".format(simTime,decomp.rank)
-        # Plot the initial state
-        decomp.plot_fig_root(dr,state_u_P.var,"state_U_"+str(itCount)+"_"+timeStr)
+# Compute resolved kinetic energy and velocity rms
+initEnergy = comms.parallel_sum(np.sum( data_all_CPU.read(0)**2 +
+                                        data_all_CPU.read(1)**2 +
+                                        data_all_CPU.read(2)**2 ))
+#rmsVel = np.sqrt(initEnergy/decomp.N)
+if (equationMode=='NS'):
+    # Compute the initial divergence
+    metric.div_vel(state_u_P,state_v_P,state_w_P,source_P)
+    maxDivg = comms.parallel_max(torch.max(torch.abs(source_P)).cpu().numpy())
     
-    # Main iteration loop
-    while (simTime < stopTime and itCount < numIt):
+# Write initial condition stats
+maxU = comms.parallel_max(data_all_CPU.absmax(0))
+maxV = comms.parallel_max(data_all_CPU.absmax(1))
+maxW = comms.parallel_max(data_all_CPU.absmax(2))
+TKE  = comms.parallel_sum(np.sum( data_all_CPU.read(0)**2 +
+                                  data_all_CPU.read(1)**2 +
+                                  data_all_CPU.read(2)**2 ))*0.5/float(decomp.N)
+if (decomp.rank==0):
+    maxCFL = max((maxU/geometry.dx,maxV/geometry.dy,maxW/geometry.dz))*simDt
+    lineStr = "  {:10d}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}"
+    print(lineStr.format(0,simTime,maxCFL,maxU,maxV,maxW,TKE,maxDivg))
+    
+# Plot the initial state
+if (plotState):
+    timeStr = "{:12.7E}_{}".format(simTime,decomp.rank)
+    # Plot the initial state
+    decomp.plot_fig_root(dr,state_u_P.var,"state_U_"+str(0)+"_"+timeStr)
+
+    
+# ----------------------------------------------------
+# Main simulation loop
+# ----------------------------------------------------
+    
+time1 = time.time()
+
+# Total iteration counter
+itCount = 0
+
+# Set up the main simulation loop
+if (adjointTraining):
+    # Adjoint training: divide outer loop into checkpointed inner loops
+    numStepsOuter = numIt//numCheckpointIt
+    numStepsInner = numCheckpointIt
+else:
+    # Forward solver only
+    numStepsOuter = 1
+    numStepsInner = numIt    
+    
+# Here we go
+for itCountOuter in range(numStepsOuter):
+    
+    # Reset the inner iteration counter
+    itCountInner = 0
+
+    # Checkpoint the velocity initial condition
+    if (adjointTraining):
+        check_u_P[:,:,:,itCountInner].copy_(state_u_P.var)
+        check_v_P[:,:,:,itCountInner].copy_(state_v_P.var)
+        check_w_P[:,:,:,itCountInner].copy_(state_w_P.var)
+    
+    # ----------------------------------------------------
+    # Forward inner loop
+    # ----------------------------------------------------
+    while (simTime < stopTime and itCountInner < numStepsInner):
 
         # [JFM] need new sub-iteration loop
         
@@ -611,7 +645,7 @@ for iterations in range(1):
         # Velocity prediction step
         # ----------------------------------------------------
 
-        # Evaluate any SFS models
+        # Evaluate SFS model
         if (use_SFSmodel):
             if (sfsmodel.modelType=='eddyVisc'):
                 muEddy = sfsmodel.eddyVisc(state_u_P,state_v_P,state_w_P,rho,metric)
@@ -620,7 +654,7 @@ for iterations in range(1):
                 sfsmodel.update(state_u_P,state_v_P,state_w_P,metric)
             else:
                 if (decomp.rank==0):
-                    raise Exception('PyFlow: SFS model type not implemented')
+                    raise Exception('\nPyFlow: SFS model type not implemented\n')
                 
         # Compute velocity prediction
         if (advancerName=="Euler"):
@@ -704,8 +738,23 @@ for iterations in range(1):
 
         
         # ----------------------------------------------------
-        # Post-step
+        # Checkpoint the velocity solution
         # ----------------------------------------------------
+        if (adjointTraining):
+            check_u_P[:,:,:,itCountInner+1].copy_(state_u_P.var)
+            check_v_P[:,:,:,itCountInner+1].copy_(state_v_P.var)
+            check_w_P[:,:,:,itCountInner+1].copy_(state_w_P.var)
+            
+                      
+        # ----------------------------------------------------
+        # Post-step tasks
+        # ----------------------------------------------------
+        # Update the counters
+        itCountInner += 1
+        itCount += 1
+        simTime += simDt
+        simTimeCheckpoint = simTime
+        
         # Compute stats
         maxU = comms.parallel_max(data_all_CPU.absmax(0))
         maxV = comms.parallel_max(data_all_CPU.absmax(1))
@@ -722,10 +771,6 @@ for iterations in range(1):
             # Compute the final divergence
             metric.div_vel(state_u_P,state_v_P,state_w_P,source_P)
             maxDivg = comms.parallel_max(torch.max(torch.abs(source_P)).cpu().numpy())
-
-        # Update the time
-        itCount += 1
-        simTime += simDt
         
         # Write stats
         if (equationMode=='NS'):
@@ -778,59 +823,150 @@ for iterations in range(1):
             maxU_sim = comms.parallel_max(np.max(np.abs( data_all_CPU.read(0) )))
             maxU_t   = comms.parallel_max(np.max(np.abs( target_data_all_CPU.read(0) )))
             L1_error = (np.mean(np.abs( data_all_CPU.read(0) -
-                                                         target_data_all_CPU.read(0) )))#/(geometry.Nx*geometry.Ny*geometry.Nz)
+                                        target_data_all_CPU.read(0) )))
+            #/(geometry.Nx*geometry.Ny*geometry.Nz)
                                           
             if (decomp.rank==0):
                 print("     Max(U) sim: {:10.5E}, Max(U) target: {:10.5E}".format(maxU_sim,maxU_t))
                 print("     L1 error  : {:10.5E}".format(L1_error))
-                
-        ## END OF ITERATION LOOP
-
-
-
-
-        
-    # ----------------------------------------------------
-    # Post-simulation tasks
-    # ----------------------------------------------------
-    
-    # Write the final state to disk
-    data_all_CPU.time = simTime
-    data_all_CPU.dt   = simDt
-    timeStr = "{:12.7E}".format(simTime)
-    if (decomp.rank==0):
-        dr.writeNGArestart(fNameOut+'_'+timeStr,data_all_CPU,True)
-    dr.writeNGArestart_parallel(fNameOut+'_'+timeStr,data_all_CPU)
             
-    #Diff = state_u_P.var - Variable( torch.FloatTensor( np.matrix( u_DNS_downsamples[T_factor*(i+1)]).T ) )
-    if (useTargetData):
-        Diff = state_u_P.var - target_P
-        Loss_i = torch.mean( torch.abs( Diff ) )
-        Loss = Loss + Loss_i
-        error = np.mean(np.abs( state_u_P.var.cpu().numpy() -  target_P.cpu().numpy() ) )
-    
-    #Loss_np = Loss.cpu().numpy()
-    
-    time2 = time.time()
-    time_elapsed = time2 - time1
-    
-    test = torch.mean( state_u_P.var)
-        
-    # Compute the final energy
-    finalEnergy = comms.parallel_sum(np.sum( data_all_CPU.read(0)**2 +
-                                             data_all_CPU.read(1)**2 +
-                                             data_all_CPU.read(2)**2 ))*0.5
-    
-    if (useTargetData):
-        if (decomp.rank==0):
-            print(iterations,test,error,time_elapsed)
-    else:
-        if (decomp.rank==0):
-            print("it={}, test={:10.5E}, elapsed={}".format(iterations,test,time_elapsed))
-            print("Energy initial={:10.5E}, final={:10.5E}, ratio={:10.5E}".format(initEnergy,finalEnergy,
-                                                                                   finalEnergy/initEnergy))
+    ## END OF FORWARD INNER LOOP
 
-    if (plotState):
-        # Print a pretty picture
-        timeStr = "{:12.7E}_{}".format(simTime,decomp.rank)
-        decomp.plot_fig_root(dr,state_u_P.var,"state_U_"+str(itCount)+"_"+timeStr)
+        
+    # ----------------------------------------------------
+    # Adjoint inner loop
+    # ----------------------------------------------------
+    if (adjointTraining):
+        itCountInner = numStepsInner
+
+        # Adjoint initial condition for mean absolute error
+        #    UPDATE THIS WITH TARGET SOLUTION ERROR
+        state_u_adj_P.var.zero_()
+        state_v_adj_P.var.zero_()
+        state_w_adj_P.var.zero_()
+        
+        while (itCountInner > 0):
+
+            # Load the checkpointed velocity solution at time 't'
+            #   Overlap cells are already synced in the checkpointed solutions
+            # --> JFM: check correct time is loaded??
+            state_u_P.var.copy_( check_u_P[:,:,:,itCountInner] )
+            state_v_P.var.copy_( check_v_P[:,:,:,itCountInner] )
+            state_w_P.var.copy_( check_w_P[:,:,:,itCountInner] )
+
+            
+            # ----------------------------------------------------
+            # Adjoint 'pressure' iteration
+            # ----------------------------------------------------
+            # Divergence of the adjoint velocity field
+            metric.div_vel(state_u_adj_P,state_v_adj_P,state_w_adj_P,source_P)
+
+            # Solve the Poisson equation
+            max_resP = poisson.solve(state_DP_P,state_p_P,source_P)
+
+            
+            # ----------------------------------------------------
+            # Adjoint corrector step: \hat{u}^*
+            # ----------------------------------------------------
+            # Compute 'pressure' gradients
+            metric.grad_P(state_DP_P)
+
+            # Update the adjoint solution
+            #   Note negative sign
+            state_u_adj_P.vel_corr(state_DP_P.grad_x, -simDt/rho)
+            state_v_adj_P.vel_corr(state_DP_P.grad_y, -simDt/rho)
+            state_w_adj_P.vel_corr(state_DP_P.grad_z, -simDt/rho)
+
+            
+            # ----------------------------------------------------
+            # Adjoint predictor step: \hat{u}^t
+            # ----------------------------------------------------
+            # Evaluate the adjoint equation rhs
+            adj_rhs1.evaluate(state_u_adj_P,state_v_adj_P,state_w_adj_P,
+                              state_u_P,state_v_P,state_w_P,VISC_P,rho,sfsmodel,metric)
+
+            # Update the adjoint state using explicit Euler
+            state_u_adj_P.update( state_u_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1]
+                                  + simDt * adj_rhs1.rhs_u )
+            state_v_adj_P.update( state_v_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1]
+                                  + simDt * adj_rhs1.rhs_v )
+            state_w_adj_P.update( state_w_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1]
+                                  + simDt * adj_rhs1.rhs_w )
+            
+            
+            # ----------------------------------------------------
+            # Post-step tasks
+            # ----------------------------------------------------
+            # Update the counters
+            itCountInner -= 1
+            simTime -= simDt
+
+            # Print stats
+            if (decomp.rank==0):
+                lineStr = "  Adj {:6d}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {: 8.3E}   {: 8.3E}"
+                print(lineStr.format(itCount-itCountInner,simTime,maxCFL,maxU,maxV,maxW,TKE,maxDivg,max_resP))
+                
+                # Resource utilization
+                mem_usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+                mem_usage /= 1e9
+                print('Adjoint iteration {:2d}, peak mem={:7.5f} GB'.format(itCountInner,mem_usage))
+            
+        ## END OF ADJOINT INNER LOOP
+
+        # Reload last checkpointed velocity solution
+        state_u_P.var.copy_( check_u_P[:,:,:,numStepsInner] )
+        state_v_P.var.copy_( check_v_P[:,:,:,numStepsInner] )
+        state_w_P.var.copy_( check_w_P[:,:,:,numStepsInner] )
+
+        # Restore simulation time
+        simTime = simTimeCheckpoint
+        
+    ## END OF ADJOINT TRAINING
+
+## END OF MAIN SIMULATION LOOP
+            
+        
+# ----------------------------------------------------
+# Post-simulation tasks
+# ----------------------------------------------------
+    
+# Write the final state to disk
+data_all_CPU.time = simTime
+data_all_CPU.dt   = simDt
+timeStr = "{:12.7E}".format(simTime)
+if (decomp.rank==0):
+    dr.writeNGArestart(fNameOut+'_'+timeStr,data_all_CPU,True)
+dr.writeNGArestart_parallel(fNameOut+'_'+timeStr,data_all_CPU)
+            
+#Diff = state_u_P.var - Variable( torch.FloatTensor( np.matrix( u_DNS_downsamples[T_factor*(i+1)]).T ) )
+if (useTargetData):
+    Diff = state_u_P.var - target_P
+    Loss_i = torch.mean( torch.abs( Diff ) )
+    Loss = Loss + Loss_i
+    error = np.mean(np.abs( state_u_P.var.cpu().numpy() -  target_P.cpu().numpy() ) )
+    
+#Loss_np = Loss.cpu().numpy()
+
+time2 = time.time()
+time_elapsed = time2 - time1
+    
+test = torch.mean( state_u_P.var)
+        
+# Compute the final energy
+finalEnergy = comms.parallel_sum(np.sum( data_all_CPU.read(0)**2 +
+                                         data_all_CPU.read(1)**2 +
+                                         data_all_CPU.read(2)**2 ))*0.5
+    
+if (useTargetData):
+    if (decomp.rank==0):
+        print(itCount,test,error,time_elapsed)
+else:
+    if (decomp.rank==0):
+        print("it={}, test={:10.5E}, elapsed={}".format(itCount,test,time_elapsed))
+        print("Energy initial={:10.5E}, final={:10.5E}, ratio={:10.5E}".format(initEnergy,finalEnergy,
+                                                                               finalEnergy/initEnergy))
+
+if (plotState):
+    # Print a pretty picture
+    timeStr = "{:12.7E}_{}".format(simTime,decomp.rank)
+    decomp.plot_fig_root(dr,state_u_P.var,"state_U_"+str(itCount)+"_"+timeStr)

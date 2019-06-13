@@ -185,19 +185,19 @@ class metric_uniform:
             # x
             state.grad_x[:-1,:,:].copy_( state.var[1: ,:,:] )
             state.grad_x[:-1,:,:].sub_ ( state.var[:-1,:,:] )
-            state.grad_x[:-1,:,:].mul_ ( self.grad_x )
+            state.grad_x[:-1,:,:].mul_ ( self.grad_xm )
             # y
             self.interp_u_xm(state)
             self.interp_uvwi_y(state)
             state.grad_y[:,:-1,:].copy_( state.var_i[:,1: ,:] )
             state.grad_y[:,:-1,:].sub_ ( state.var_i[:,:-1,:] )
-            state.grad_y[:,:-1,:].mul_ ( self.grad_y )
+            state.grad_y[:,:-1,:].mul_ ( self.grad_ym )
             # z
             self.interp_u_xm(state)
             self.interp_uvwi_z(state)
             state.grad_z[:,:,:-1].copy_( state.var_i[:,:,1: ] )
             state.grad_z[:,:,:-1].sub_ ( state.var_i[:,:,:-1] )
-            state.grad_z[:,:,:-1].mul_ ( self.grad_z )
+            state.grad_z[:,:,:-1].mul_ ( self.grad_zm )
             
         elif (comp=='v'):
             # x
@@ -205,17 +205,17 @@ class metric_uniform:
             self.interp_uvwi_x(state)
             state.grad_x[:-1,:,:].copy_( state.var_i[1: ,:,:] )
             state.grad_x[:-1,:,:].sub_ ( state.var_i[:-1,:,:] )
-            state.grad_x[:-1,:,:].mul_ ( self.grad_x )
+            state.grad_x[:-1,:,:].mul_ ( self.grad_xm )
             # y
             state.grad_y[:,:-1,:].copy_( state.var[:,1: ,:] )
             state.grad_y[:,:-1,:].sub_ ( state.var[:,:-1,:] )
-            state.grad_y[:,:-1,:].mul_ ( self.grad_y )
+            state.grad_y[:,:-1,:].mul_ ( self.grad_ym )
             # z
             self.interp_v_ym(state)
             self.interp_uvwi_z(state)
             state.grad_z[:,:,:-1].copy_( state.var_i[:,:,1: ] )
             state.grad_z[:,:,:-1].sub_ ( state.var_i[:,:,:-1] )
-            state.grad_z[:,:,:-1].mul_ ( self.grad_z )
+            state.grad_z[:,:,:-1].mul_ ( self.grad_zm )
 
         elif (comp=='w'):
             # x
@@ -223,17 +223,59 @@ class metric_uniform:
             self.interp_uvwi_x(state)
             state.grad_x[:-1,:,:].copy_( state.var_i[1: ,:,:] )
             state.grad_x[:-1,:,:].sub_ ( state.var_i[:-1,:,:] )
-            state.grad_x[:-1,:,:].mul_ ( self.grad_x )
+            state.grad_x[:-1,:,:].mul_ ( self.grad_xm )
             # y
             self.interp_w_zm(state)
             self.interp_uvwi_y(state)
             state.grad_y[:,:-1,:].copy_( state.var_i[:,1: ,:] )
             state.grad_y[:,:-1,:].sub_ ( state.var_i[:,:-1,:] )
-            state.grad_y[:,:-1,:].mul_ ( self.grad_y )
+            state.grad_y[:,:-1,:].mul_ ( self.grad_ym )
             # z
             state.grad_z[:,:,:-1].copy_( state.var[:,:,1: ] )
             state.grad_z[:,:,:-1].sub_ ( state.var[:,:,:-1] )
-            state.grad_z[:,:,:-1].mul_ ( self.grad_z )
+            state.grad_z[:,:,:-1].mul_ ( self.grad_zm )
+
+
+    # ------------------------------------------------------------
+    # Gradients of velocity at cell edges
+    #  --> For advective-form terms in adjoint update
+    def grad_vel_adj(self,state,comp):
+        # Diagonal components - use interpolated velocities
+        if (comp=='u'):
+            # grad_x at x-faces
+            self.interp_u_xm(state)
+            state.grad_x[1:,:,:].copy_( state.var_i[1: ,:,:] )
+            state.grad_x[1:,:,:].sub_ ( state.var_i[:-1,:,:] )
+            state.grad_x[1:,:,:].mul_ ( self.grad_x )
+        elif (comp=='v'):
+            # grad_y at y-faces
+            self.interp_v_ym(state)
+            state.grad_y[:,1:,:].copy_( state.var_i[:,1: ,:] )
+            state.grad_y[:,1:,:].sub_ ( state.var_i[:,:-1,:] )
+            state.grad_y[:,1:,:].mul_ ( self.grad_y )
+        elif (comp=='w'):
+            # grad_z at z-faces
+            self.interp_w_zm(state)
+            state.grad_z[:,:,1:].copy_( state.var_i[:,:,1: ] )
+            state.grad_z[:,:,1:].sub_ ( state.var_i[:,:,:-1] )
+            state.grad_z[:,:,1:].mul_ ( self.grad_z )
+
+        # Off-diagonal components - use cell-face velocities
+        if (comp=='v' or comp=='w'):
+            # grad_x at -1/2 yz-edges
+            state.grad_x[1:,:,:].copy_( state.var[1: ,:,:] )
+            state.grad_x[1:,:,:].sub_ ( state.var[:-1,:,:] )
+            state.grad_x[1:,:,:].mul_ ( self.grad_x )
+        if (comp=='u' or comp=='w'):
+            # grad_y at -1/2 xy-edges
+            state.grad_y[:,1:,:].copy_( state.var[:,1: ,:] )
+            state.grad_y[:,1:,:].sub_ ( state.var[:,:-1,:] )
+            state.grad_y[:,1:,:].mul_ ( self.grad_y )
+        if (comp=='u' or comp=='v'):
+            # grad_z at -1/2 xz-edges
+            state.grad_z[:,:,1:].copy_( state.var[:,:,1: ] )
+            state.grad_z[:,:,1:].sub_ ( state.var[:,:,:-1] )
+            state.grad_z[:,:,1:].mul_ ( self.grad_z )
 
 
     # -------------------------------------------------------------
@@ -326,7 +368,7 @@ class metric_uniform:
 
     # -------------------------------------------------
     # Convective flux xx
-    def vel_conv_xx(self,state_u,state_v,grad_x):
+    def vel_conv_xx(self,state_u,state_v,grad_x,sign=1.0):
         imin_ = self.imin_; imax_ = self.imax_
         jmin_ = self.jmin_; jmax_ = self.jmax_+1
         kmin_ = self.kmin_; kmax_ = self.kmax_+1
@@ -334,11 +376,11 @@ class metric_uniform:
         grad_x -= ( state_u.var_i[imin_:imax_+1,jmin_:jmax_,kmin_:kmax_] *
                     state_v.var_i[imin_:imax_+1,jmin_:jmax_,kmin_:kmax_] -
                     state_u.var_i[imin_-1:imax_,jmin_:jmax_,kmin_:kmax_] *
-                    state_v.var_i[imin_-1:imax_,jmin_:jmax_,kmin_:kmax_] )*self.grad_x
+                    state_v.var_i[imin_-1:imax_,jmin_:jmax_,kmin_:kmax_] )*self.grad_x*sign
         
     # -------------------------------------------------
     # Convective flux yy
-    def vel_conv_yy(self,state_u,state_v,grad_y):
+    def vel_conv_yy(self,state_u,state_v,grad_y,sign=1.0):
         imin_ = self.imin_; imax_ = self.imax_+1
         jmin_ = self.jmin_; jmax_ = self.jmax_
         kmin_ = self.kmin_; kmax_ = self.kmax_+1
@@ -346,11 +388,11 @@ class metric_uniform:
         grad_y -= ( state_u.var_i[imin_:imax_,jmin_:jmax_+1,kmin_:kmax_] *
                     state_v.var_i[imin_:imax_,jmin_:jmax_+1,kmin_:kmax_] -
                     state_u.var_i[imin_:imax_,jmin_-1:jmax_,kmin_:kmax_] *
-                    state_v.var_i[imin_:imax_,jmin_-1:jmax_,kmin_:kmax_] )*self.grad_y
+                    state_v.var_i[imin_:imax_,jmin_-1:jmax_,kmin_:kmax_] )*self.grad_y*sign
         
     # -------------------------------------------------
     # Convective flux zz
-    def vel_conv_zz(self,state_u,state_w,grad_z):
+    def vel_conv_zz(self,state_u,state_w,grad_z,sign=1.0):
         imin_ = self.imin_; imax_ = self.imax_+1
         jmin_ = self.jmin_; jmax_ = self.jmax_+1
         kmin_ = self.kmin_; kmax_ = self.kmax_
@@ -358,11 +400,11 @@ class metric_uniform:
         grad_z -= ( state_u.var_i[imin_:imax_,jmin_:jmax_,kmin_:kmax_+1] *
                     state_w.var_i[imin_:imax_,jmin_:jmax_,kmin_:kmax_+1] -
                     state_u.var_i[imin_:imax_,jmin_:jmax_,kmin_-1:kmax_] *
-                    state_w.var_i[imin_:imax_,jmin_:jmax_,kmin_-1:kmax_] )*self.grad_z
+                    state_w.var_i[imin_:imax_,jmin_:jmax_,kmin_-1:kmax_] )*self.grad_z*sign
         
     # -------------------------------------------------
     # Off-diagonal convective flux x
-    def vel_conv_x(self,state_u,state_v,grad_x):
+    def vel_conv_x(self,state_u,state_v,grad_x,sign=1.0):
         imin_ = self.imin_; imax_ = self.imax_+1
         jmin_ = self.jmin_; jmax_ = self.jmax_+1
         kmin_ = self.kmin_; kmax_ = self.kmax_+1
@@ -370,11 +412,11 @@ class metric_uniform:
         grad_x -= ( state_u.var_i[imin_+1:imax_+1,jmin_:jmax_,kmin_:kmax_] *
                     state_v.var_i[imin_+1:imax_+1,jmin_:jmax_,kmin_:kmax_] -
                     state_u.var_i[imin_  :imax_  ,jmin_:jmax_,kmin_:kmax_] *
-                    state_v.var_i[imin_  :imax_  ,jmin_:jmax_,kmin_:kmax_] )*self.grad_x
+                    state_v.var_i[imin_  :imax_  ,jmin_:jmax_,kmin_:kmax_] )*self.grad_x*sign
         
     # -------------------------------------------------
     # Off-diagonal convective flux y
-    def vel_conv_y(self,state_u,state_v,grad_y):
+    def vel_conv_y(self,state_u,state_v,grad_y,sign=1.0):
         imin_ = self.imin_; imax_ = self.imax_+1
         jmin_ = self.jmin_; jmax_ = self.jmax_+1
         kmin_ = self.kmin_; kmax_ = self.kmax_+1
@@ -382,11 +424,11 @@ class metric_uniform:
         grad_y -= ( state_u.var_i[imin_:imax_,jmin_+1:jmax_+1,kmin_:kmax_] *
                     state_v.var_i[imin_:imax_,jmin_+1:jmax_+1,kmin_:kmax_] -
                     state_u.var_i[imin_:imax_,jmin_  :jmax_  ,kmin_:kmax_] *
-                    state_v.var_i[imin_:imax_,jmin_  :jmax_  ,kmin_:kmax_] )*self.grad_y
+                    state_v.var_i[imin_:imax_,jmin_  :jmax_  ,kmin_:kmax_] )*self.grad_y*sign
         
     # -------------------------------------------------
     # Off-diagonal convective flux z
-    def vel_conv_z(self,state_u,state_w,grad_z):
+    def vel_conv_z(self,state_u,state_w,grad_z,sign=1.0):
         imin_ = self.imin_; imax_ = self.imax_+1
         jmin_ = self.jmin_; jmax_ = self.jmax_+1
         kmin_ = self.kmin_; kmax_ = self.kmax_+1
@@ -394,6 +436,6 @@ class metric_uniform:
         grad_z -= ( state_u.var_i[imin_:imax_,jmin_:jmax_,kmin_+1:kmax_+1] *
                     state_w.var_i[imin_:imax_,jmin_:jmax_,kmin_+1:kmax_+1] -
                     state_u.var_i[imin_:imax_,jmin_:jmax_,kmin_  :kmax_  ] *
-                    state_w.var_i[imin_:imax_,jmin_:jmax_,kmin_  :kmax_  ] )*self.grad_z
+                    state_w.var_i[imin_:imax_,jmin_:jmax_,kmin_  :kmax_  ] )*self.grad_z*sign
 
 

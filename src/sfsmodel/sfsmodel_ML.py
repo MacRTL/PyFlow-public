@@ -73,7 +73,7 @@ class ClosureModel2(nn.Module):
 # Machine learning model for the SFS residual stress
 # ----------------------------------------------------
 class residual_stress:
-    def __init__(self,decomp,geo,metric):
+    def __init__(self,decomp,geo,metric,modelDictName):
         # Default precision
         prec = decomp.prec
 
