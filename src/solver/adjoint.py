@@ -39,8 +39,9 @@ from torch.autograd import Variable
 # ----------------------------------------------------
 class rhs_adjPredictor:
     def __init__(self,decomp):
-        # Default precision
+        # Default precision and offloading settings
         prec = decomp.prec
+        self.device = decomp.device
 
         # Data sizes
         nx_  = decomp.nx_
@@ -287,9 +288,9 @@ class rhs_adjPredictor:
 
         # Enable computational graph generation
         #   --> Can memory management be improved by pre-allocating?
-        u_V = Variable( state_u.var_i, requires_grad=True )
-        v_V = Variable( state_v.var_i, requires_grad=True )
-        w_V = Variable( state_w.var_i, requires_grad=True )
+        u_V = Variable( state_u.var_i, requires_grad=True ).to(self.device)
+        v_V = Variable( state_v.var_i, requires_grad=True ).to(self.device)
+        w_V = Variable( state_w.var_i, requires_grad=True ).to(self.device)
         
         # Evaluate the SFS model using PyTorch automatic differentiation
         # Gradients in model inputs need to be computed using non-in-place operations

@@ -122,8 +122,9 @@ class NeuralNetworkModel2(nn.Module):
 # ----------------------------------------------------
 class residual_stress:
     def __init__(self,decomp,geo,metric,modelDictName,loadModel=False):
-        # Default precision
+        # Default precision and offloading settings
         self.prec = decomp.prec
+        self.device = decomp.device
 
         # External model type identifier
         self.modelType = 'source'
@@ -138,11 +139,11 @@ class residual_stress:
 
         # Allocate workspace arrays
         self.GX = torch.zeros(nxo_,nyo_,nzo_,1,
-                              dtype=self.prec).to(decomp.device)
+                              dtype=self.prec).to(self.device)
         self.GY = torch.zeros(nxo_,nyo_,nzo_,1,
-                              dtype=self.prec).to(decomp.device)
+                              dtype=self.prec).to(self.device)
         self.GZ = torch.zeros(nxo_,nyo_,nzo_,1,
-                              dtype=self.prec).to(decomp.device)
+                              dtype=self.prec).to(self.device)
 
         # Filter width
         if (geo.type=='uniform'):
@@ -159,7 +160,7 @@ class residual_stress:
             self.model.load_state_dict(torch.load(modelDictName))
 
         # Offload model
-        self.model.to(decomp.device)
+        self.model.to(self.device)
 
         # Learning rate
         self.LR = 0.01
@@ -175,7 +176,7 @@ class residual_stress:
                                        1.2744681e+06, 9.6111162e+05, 1.2722050e+06, 1.2891108e+06,
                                        1.2891108e+06, 9.6587112e+05] )  
         
-        self.Constant_norm_P = Variable(torch.FloatTensor( Constant_norm ))
+        self.Constant_norm_P = Variable(torch.FloatTensor( Constant_norm )).to(self.device)
         
         
     # ----------------------------------------------------
@@ -183,9 +184,9 @@ class residual_stress:
     def update(self,u_P,v_P,w_P,metric,requires_grad=False):
 
         # Set precision for ML model evaluation
-        float_u_P = u_P.type(torch.FloatTensor)
-        float_v_P = v_P.type(torch.FloatTensor)
-        float_w_P = w_P.type(torch.FloatTensor)
+        float_u_P = u_P.type(torch.FloatTensor).to(self.device)
+        float_v_P = v_P.type(torch.FloatTensor).to(self.device)
+        float_w_P = w_P.type(torch.FloatTensor).to(self.device)
 
         # Compute derivatives of input variables
         #   --> In adjoint training step, u_P, etc., record the computational graph
@@ -213,14 +214,14 @@ class residual_stress:
             
         # Update the residual stress source term
         if (self.prec==torch.float64):
-            self.GX = Closure_u_P.type(torch.DoubleTensor) # self.GX.copy_() ?
-            self.GY = Closure_v_P.type(torch.DoubleTensor)
-            self.GZ = Closure_w_P.type(torch.DoubleTensor)
+            self.GX = Closure_u_P.type(torch.DoubleTensor).to(self.device) # self.GX.copy_() ?
+            self.GY = Closure_v_P.type(torch.DoubleTensor).to(self.device)
+            self.GZ = Closure_w_P.type(torch.DoubleTensor).to(self.device)
         else:
             # Untested
-            self.GX = Closure_u_P.type(torch.FloatTensor)
-            self.GY = Closure_v_P.type(torch.FloatTensor)
-            self.GZ = Closure_w_P.type(torch.FloatTensor)
+            self.GX = Closure_u_P.type(torch.FloatTensor).to(self.device)
+            self.GY = Closure_v_P.type(torch.FloatTensor).to(self.device)
+            self.GZ = Closure_w_P.type(torch.FloatTensor).to(self.device)
         
         # Clean up
         del ML_input_data
