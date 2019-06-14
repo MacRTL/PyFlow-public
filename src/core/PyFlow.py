@@ -122,7 +122,7 @@ if (configName=='restart'):
 
     # Downsampled 1024^3 DNS - needs SGS model
     inFileBase    = '../../verification/'
-    inFileDir     = 'downsampled_LES_restart/dnsbox_1024_Lx0.045_NR_run_2/restart_1024_Lx0.045_NR_Delta16_Down16/test_input_files/'
+    inFileDir     = inFileBase+'downsampled_LES_restart/dnsbox_1024_Lx0.045_NR_run_2/restart_1024_Lx0.045_NR_Delta16_Down16/test_input_files/'
     configFileStr = inFileDir+'config_dnsbox_1024_Lx0.045_NR_Delta16_Down16_0000'
     dataFileBStr  = inFileDir+'dnsbox_1024_Lx0.045_NR_Delta16_Down16_'
     startFileIt   = 20
@@ -170,7 +170,7 @@ equationMode = "NS"
 # Pressure solver settings
 pSolverMode             = "bicgstab"
 min_pressure_residual   = 1e-9
-max_pressure_iterations = 50 #150
+max_pressure_iterations = 150
 #
 # Accuracy and precision settings
 genericOrder = 2
