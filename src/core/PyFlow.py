@@ -121,11 +121,11 @@ if (configName=='restart'):
     #dataFileType  = 'restart'
 
     # Downsampled 1024^3 DNS - needs SGS model
-    inFileDir     = '../../input/downsampled_LES_restart/dnsbox_1024_Lx0.045_NR_run_2/restart_1024_Lx0.045_NR_Delta16_Down16/'
+    inFileDir     = '../../verification/downsampled_LES_restart/dnsbox_1024_Lx0.045_NR_run_2/restart_1024_Lx0.045_NR_Delta16_Down16/test_input_files/'
     configFileStr = inFileDir+'config_dnsbox_1024_Lx0.045_NR_Delta16_Down16_0000'
-    dataFileBStr  = inFileDir+'dnsbox_1024_Lx0.045_NR_Delta16_Down16_000000'
+    dataFileBStr  = inFileDir+'dnsbox_1024_Lx0.045_NR_Delta16_Down16_'
     startFileIt   = 20
-    dataFileStr   = dataFileBStr + str(startFileIt)
+    dataFileStr   = dataFileBStr + '{:08d}'.format(startFileIt)
     dataFileType  = 'restart'
 
 # Data file to write
@@ -154,8 +154,9 @@ startTime    = 0.0
 SFSmodel = 'ML'; modelDictName = 'test_model'
 
 # Adjoint training settings
+#   PyFlow will look for a target data file every numCheckpointIt
 adjointTraining = True
-numCheckpointIt = 2
+numCheckpointIt = 10
 
 # Solver settings
 #   advancerName options: Euler, RK4
@@ -179,10 +180,10 @@ dtypeNumpy   = np.float64
 plotState    = False
 numItPlotOut = 20
 
-# Comparison options
+# Comparison options (deprecated)
 useTargetData = False
 if (useTargetData):
-    targetFileBaseStr  = dataFileBStr
+    targetFileBaseStr = dataFileBStr
     numItTargetComp = 50
 
 
@@ -191,12 +192,11 @@ if (useTargetData):
 # ----------------------------------------------------
 # Configure PyTorch
 # ----------------------------------------------------
-
 # Offload to GPUs if available
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
-    
+
 # ----------------------------------------------------
 # Configure simulation domain
 # ----------------------------------------------------
@@ -242,6 +242,9 @@ nxo_ = decomp.nxo_
 nyo_ = decomp.nyo_
 nzo_ = decomp.nzo_
 
+# Global grid sizes
+nx = decomp.nx; ny = decomp.ny; nz = decomp.nz
+
 
 
 # ----------------------------------------------------
@@ -281,9 +284,9 @@ elif (configName=='periodicGaussian'):
     vMax = 2.0
     wMax = 2.0
     stdDev = 0.1
-    gaussianBump = ( np.exp(  -0.5*(xGrid[imin_loc:imax_loc+1,np.newaxis,np.newaxis]/stdDev)**2)
-                     * np.exp(-0.5*(yGrid[np.newaxis,jmin_loc:jmax_loc+1,np.newaxis]/stdDev)**2)
-                     * np.exp(-0.5*(zGrid[np.newaxis,np.newaxis,kmin_loc:kmax_loc+1]/stdDev)**2) )
+    gaussianBump = ( np.exp(-0.5*(xGrid[imin_loc:imax_loc+1,np.newaxis,np.newaxis]/stdDev)**2) *
+                     np.exp(-0.5*(yGrid[np.newaxis,jmin_loc:jmax_loc+1,np.newaxis]/stdDev)**2) *
+                     np.exp(-0.5*(zGrid[np.newaxis,np.newaxis,kmin_loc:kmax_loc+1]/stdDev)**2) )
     data_IC = np.zeros((nx_,ny_,nz_,4),dtype=dtypeNumpy)
     data_IC[:,:,:,0] = uMax * gaussianBump
     data_IC[:,:,:,1] = vMax * gaussianBump
@@ -356,16 +359,6 @@ IC_p_np = data_IC[:,:,:,3]
 IC_zeros_np = np.zeros( (nx_,ny_,nz_) )
 IC_ones_np  = np.ones ( (nx_,ny_,nz_) )
 
-    
-# ----------------------------------------------------
-# Initialize closure model(s)
-# ----------------------------------------------------
-# Initialize the neural network closure model
-#model = sfsmodel_nn.ClosureModel2()
-#model_name = 'LES_model_NR_March2019'
-#model.load_state_dict(torch.load(model_name))
-#model.to(device)
-
 
 # ----------------------------------------------------
 # Allocate memory for state data
@@ -375,14 +368,15 @@ state_u_P    = state.state_P(decomp,IC_u_np)
 state_v_P    = state.state_P(decomp,IC_v_np)
 state_w_P    = state.state_P(decomp,IC_w_np)
 state_p_P    = state.state_P(decomp,IC_p_np)
-state_DP_P = state.state_P(decomp,IC_p_np)
+state_DP_P   = state.state_P(decomp,IC_p_np)
 
 # Set up a Numpy mirror to the PyTorch state
 #  --> Used for file I/O
 state_data_all = (state_u_P, state_v_P, state_w_P, state_p_P)
-data_all_CPU   = state.data_all_CPU(decomp,startTime,simDt,names[0:4],state_data_all)
+data_all_CPU   = state.data_all_CPU(decomp,startTime,simDt,
+                                    names[0:4],state_data_all)
 
-# Need a temporary velocity state for RK solvers
+# Allocate a temporary velocity state for RK solvers
 if (advancerName[:-1]=="RK"):
     state_uTmp_P = state.state_P(decomp,IC_u_np)
     state_vTmp_P = state.state_P(decomp,IC_v_np)
@@ -395,7 +389,7 @@ VISC_P.mul_(mu)
 
 
 # ----------------------------------------------------
-# Set up adjoint training
+# Configure adjoint training
 # ----------------------------------------------------
 if (adjointTraining):
     # Check for a few prerequisites
@@ -413,22 +407,28 @@ if (adjointTraining):
 
         # Set up a Numpy mirror to the PyTorch adjoint state
         adjoint_data_all = (state_u_adj_P, state_v_adj_P, state_w_adj_P)
-        data_adj_CPU = state.data_all_CPU(decomp,startTime,simDt,names[0:3],adjoint_data_all)
+        data_adj_CPU = state.data_all_CPU(decomp,startTime,simDt,
+                                          names[0:3],adjoint_data_all)
 
         # Initialize the adjoint RHS object
         adj_rhs1 = adjoint.rhs_adjPredictor(decomp)
         
         # Allocate space for checkpointed solutions
         #  --> Could be moved to adjoint module
-        check_u_P = torch.zeros(nxo_,nyo_,nzo_,numCheckpointIt+1,dtype=dtypeTorch).to(device)
-        check_v_P = torch.zeros(nxo_,nyo_,nzo_,numCheckpointIt+1,dtype=dtypeTorch).to(device)
-        check_w_P = torch.zeros(nxo_,nyo_,nzo_,numCheckpointIt+1,dtype=dtypeTorch).to(device)
+        check_u_P = torch.zeros(nxo_,nyo_,nzo_,numCheckpointIt+1,
+                                dtype=dtypeTorch).to(device)
+        check_v_P = torch.zeros(nxo_,nyo_,nzo_,numCheckpointIt+1,
+                                dtype=dtypeTorch).to(device)
+        check_w_P = torch.zeros(nxo_,nyo_,nzo_,numCheckpointIt+1,
+                                dtype=dtypeTorch).to(device)
 
-        # Set up target data {JFM FINISH}
+        # Set up to use target data
+        useTargetData = True
+        numItTargetComp = numCheckpointIt
 
 
 # ----------------------------------------------------
-# Set up SFS model
+# Configure SFS model
 # ----------------------------------------------------
 if (SFSmodel=='Smagorinsky'):
     use_SFSmodel = True
@@ -450,7 +450,7 @@ if (sfsmodel.modelType=='eddyVisc'):
 
     
 # ----------------------------------------------------
-# Set up solver
+# Configure solver
 # ----------------------------------------------------
 if (equationMode=='scalar'):
     # Scalar advection-diffusion equations
@@ -503,14 +503,22 @@ if (configName=='restart'):
 # Allocate memory for target state data
 # ----------------------------------------------------
 if (useTargetData):
-    state_u_T    = state.state_P(decomp,IC_zeros_np)
-    state_v_T    = state.state_P(decomp,IC_zeros_np)
-    state_w_T    = state.state_P(decomp,IC_zeros_np)
+    state_u_T = state.state_P(decomp,IC_zeros_np,need_gradients=False)
+    state_v_T = state.state_P(decomp,IC_zeros_np,need_gradients=False)
+    state_w_T = state.state_P(decomp,IC_zeros_np,need_gradients=False)
     
     #  Set up a Numpy mirror to the target state data
     target_data_all = (state_u_T, state_v_T, state_w_T)
     target_data_all_CPU = state.data_all_CPU(decomp,startTime,simDt,names[0:3],target_data_all)
-    dr.readNGArestart_parallel(dataFileStr,target_data_all_CPU)
+
+    # Read the target data file
+    #   Adjoint training reads target files in outer iteration loop
+    if (not adjointTraining):
+        targetDataFileStr = targetFileBaseStr + '{:08d}'.format(startFileIt)
+        dr.readNGArestart_parallel(targetDataFileStr,target_data_all_CPU)
+
+    # JFM - for SFS model verification
+    #dr.readNGArestart_parallel(dataFileStr,target_data_all_CPU)
     #print(target_data_all_CPU.read(0)[0,0,0])
 
     
@@ -539,7 +547,7 @@ del data_IC
 
 
 # ----------------------------------------------------
-# Pre-simulation loop monitoring tasks 
+# Pre-simulation monitoring tasks 
 # ----------------------------------------------------
     
 #for param_group in optimizer.param_groups:
@@ -550,7 +558,7 @@ del data_IC
 #u_P = Variable( torch.FloatTensor( IC_u_np ) )
 #v_P = Variable( torch.FloatTensor( IC_v_np ) )
 #
-Loss = 0.0
+#Loss = 0.0
 
 # Simulation time
 simTime  = startTime
@@ -564,8 +572,10 @@ state_p_P.update_border()
 
 # Write the initial data file
 timeStr = "{:12.7E}".format(simTime)
+# Root process writes the header
 if (decomp.rank==0):
     dr.writeNGArestart(fNameOut+'_'+timeStr,data_all_CPU,True)
+# All processes write data
 dr.writeNGArestart_parallel(fNameOut+'_'+timeStr,data_all_CPU)
 
 # Write the stdout header
@@ -588,7 +598,7 @@ if (equationMode=='NS'):
     metric.div_vel(state_u_P,state_v_P,state_w_P,source_P)
     maxDivg = comms.parallel_max(torch.max(torch.abs(source_P)).cpu().numpy())
     
-# Write initial condition stats
+# Write initial condition stats to screen
 maxU = comms.parallel_max(data_all_CPU.absmax(0))
 maxV = comms.parallel_max(data_all_CPU.absmax(1))
 maxW = comms.parallel_max(data_all_CPU.absmax(2))
@@ -616,7 +626,7 @@ time1 = time.time()
 # Total iteration counter
 itCount = 0
 
-# Set up the main simulation loop
+# Configure the main simulation loop
 if (adjointTraining):
     # Adjoint training: divide outer loop into checkpointed inner loops
     numStepsOuter = numIt//numCheckpointIt
@@ -802,7 +812,7 @@ for itCountOuter in range(numStepsOuter):
 
 
         # Compare to target DNS data
-        if (useTargetData and np.mod(itCount,numItTargetComp)==0):
+        if (useTargetData and np.mod(itCount,numItTargetComp)==0 and not adjointTraining):
             # Only on root processor for now
             targetFileIt  = startFileIt+itCount
             targetFileStr = targetFileBaseStr + str(targetFileIt)
@@ -837,17 +847,25 @@ for itCountOuter in range(numStepsOuter):
     ## END OF FORWARD INNER LOOP
 
         
+        
     # ----------------------------------------------------
     # Adjoint inner loop
     # ----------------------------------------------------
     if (adjointTraining):
         itCountInner = numStepsInner
 
-        # Adjoint initial condition for mean absolute error
-        #    UPDATE THIS WITH TARGET SOLUTION ERROR
-        state_u_adj_P.var.zero_()
-        state_v_adj_P.var.zero_()
-        state_w_adj_P.var.zero_()
+        # Load target state
+        targetDataFileStr = dataFileBStr + '{:08d}'.format(startFileIt+itCount)
+        dr.readNGArestart_parallel(targetDataFileStr,target_data_all_CPU)
+
+        # Set the adjoint initial condition to the mean absolute error
+        state_u_adj_P.var.copy_( torch.sign(state_u_P.var - state_u_T.var) )
+        state_v_adj_P.var.copy_( torch.sign(state_v_P.var - state_v_T.var) )
+        state_w_adj_P.var.copy_( torch.sign(state_w_P.var - state_w_T.var) )
+        # Normalize
+        state_u_adj_P.var.div_ ( nx*ny*nz )
+        state_v_adj_P.var.div_ ( nx*ny*nz )
+        state_w_adj_P.var.div_ ( nx*ny*nz )
         
         while (itCountInner > 0):
 

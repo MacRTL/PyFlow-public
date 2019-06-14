@@ -307,7 +307,7 @@ class rhs_NavierStokes:
         # Source-type SFS models, including ML models
         if (sfsmodel.modelType=='source'):
             # Use interpolated variables
-            #   --> ML model can be improved by using staggered derivatives internally
+            #  --> ML model can be improved by using staggered derivatives internally
             metric.interp_u_xm( state_u )
             metric.interp_v_ym( state_v )
             metric.interp_w_zm( state_w )

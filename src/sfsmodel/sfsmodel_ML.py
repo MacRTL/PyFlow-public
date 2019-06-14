@@ -137,9 +137,12 @@ class residual_stress:
         nzo_ = decomp.nzo_
 
         # Allocate workspace arrays
-        self.GX = torch.zeros(nxo_,nyo_,nzo_,1,dtype=self.prec).to(decomp.device)
-        self.GY = torch.zeros(nxo_,nyo_,nzo_,1,dtype=self.prec).to(decomp.device)
-        self.GZ = torch.zeros(nxo_,nyo_,nzo_,1,dtype=self.prec).to(decomp.device)
+        self.GX = torch.zeros(nxo_,nyo_,nzo_,1,
+                              dtype=self.prec).to(decomp.device)
+        self.GY = torch.zeros(nxo_,nyo_,nzo_,1,
+                              dtype=self.prec).to(decomp.device)
+        self.GZ = torch.zeros(nxo_,nyo_,nzo_,1,
+                              dtype=self.prec).to(decomp.device)
 
         # Filter width
         if (geo.type=='uniform'):
@@ -214,6 +217,7 @@ class residual_stress:
             self.GY = Closure_v_P.type(torch.DoubleTensor)
             self.GZ = Closure_w_P.type(torch.DoubleTensor)
         else:
+            # Untested
             self.GX = Closure_u_P.type(torch.FloatTensor)
             self.GY = Closure_v_P.type(torch.FloatTensor)
             self.GZ = Closure_w_P.type(torch.FloatTensor)

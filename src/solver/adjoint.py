@@ -214,7 +214,7 @@ class rhs_adjPredictor:
         self.FZ.mul_( metric.interp_zm )
         self.FZ.mul_( state_w_adj.var_i )
 
-        # Accumulate to RHS
+        # Accumulate to adj(u) RHS
         self.rhs_u.sub_( self.FX[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
         self.rhs_u.sub_( self.FY[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
         self.rhs_u.sub_( self.FZ[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
@@ -242,7 +242,7 @@ class rhs_adjPredictor:
         self.FZ.mul_( metric.interp_zm )
         self.FZ.mul_( state_w_adj.var_i )
 
-        # Accumulate to RHS
+        # Accumulate to adj(v) RHS
         self.rhs_v.sub_( self.FX[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
         self.rhs_v.sub_( self.FY[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
         self.rhs_v.sub_( self.FZ[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
@@ -270,7 +270,7 @@ class rhs_adjPredictor:
         self.FZ.copy_( state_w.grad_z )
         self.FZ.mul_ ( state_w_adj.var )
 
-        # Accumulate to RHS
+        # Accumulate to adj(w) RHS
         self.rhs_w.sub_( self.FX[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
         self.rhs_w.sub_( self.FY[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
         self.rhs_w.sub_( self.FZ[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
@@ -286,6 +286,7 @@ class rhs_adjPredictor:
         metric.interp_w_zm( state_w )
 
         # Enable computational graph generation
+        #   --> Can memory management be improved by pre-allocating?
         u_V = Variable( state_u.var_i, requires_grad=True )
         v_V = Variable( state_v.var_i, requires_grad=True )
         w_V = Variable( state_w.var_i, requires_grad=True )
@@ -294,19 +295,24 @@ class rhs_adjPredictor:
         # Gradients in model inputs need to be computed using non-in-place operations
         sfsmodel.update(u_V,v_V,w_V,metric,requires_grad=True)
         
-        # Treat adjoint as a constant when calculating the chain rule
+        # Treat the adjoint as a constant when calculating the chain rule
         metric.interp_u_xm( state_u_adj )
         metric.interp_v_ym( state_v_adj )
         metric.interp_w_zm( state_w_adj )
+        # Pre-allocate u_A_det, etc?
         u_A_det = Variable(state_u_adj.var_i).detach()
         v_A_det = Variable(state_v_adj.var_i).detach()
         w_A_det = Variable(state_w_adj.var_i).detach()
 
+        #print(u_A_det.size())
+        
         # Compute g
         g = ( torch.sum(sfsmodel.GX[:,:,:,0]*u_A_det) +
               torch.sum(sfsmodel.GY[:,:,:,0]*v_A_det) +
               torch.sum(sfsmodel.GZ[:,:,:,0]*w_A_det) )
 
+        #print(g.size())
+        
         # Compute the gradient of g wrt. u
         g.backward()
 
@@ -315,23 +321,23 @@ class rhs_adjPredictor:
         grad_ML2 = v_V.grad.data.type(torch.FloatTensor).detach()
         grad_ML3 = w_V.grad.data.type(torch.FloatTensor).detach()
         
-        print(grad_ML1.size())
+        #print(grad_ML1.size())
 
         # Interpolate source terms to cell faces and accumulate to the RHS
         # x
         metric.interp_sc_x( grad_ML1, self.interp_SC )
-        self.rhs_u.add_( self.interp_SC[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+        self.rhs_u.sub_( self.interp_SC[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
         # y
         metric.interp_sc_y( grad_ML2, self.interp_SC )
-        self.rhs_v.add_( self.interp_SC[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+        self.rhs_v.sub_( self.interp_SC[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
         # z
         metric.interp_sc_z( grad_ML3, self.interp_SC )
-        self.rhs_w.add_( self.interp_SC[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+        self.rhs_w.sub_( self.interp_SC[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
 
         # Accumulate the AD gradient to the adjoint equation RHS
-        #self.rhs_u.add_( sfsmodel.GX[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
-        #self.rhs_v.add_( sfsmodel.GY[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
-        #self.rhs_w.add_( sfsmodel.GZ[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+        #self.rhs_u.sub_( sfsmodel.GX[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+        #self.rhs_v.sub_( sfsmodel.GY[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+        #self.rhs_w.sub_( sfsmodel.GZ[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
 
         # Clean up
         del g

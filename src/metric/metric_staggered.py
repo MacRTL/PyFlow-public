@@ -78,7 +78,8 @@ class metric_uniform:
             self.vol = dx*dy*dz
 
             # Laplace operator
-            self.Laplace = torch.zeros(nxo_,nyo_,nzo_,3,3,dtype=geo.prec).to(geo.device)
+            self.Laplace = torch.zeros(nxo_,nyo_,nzo_,3,3,
+                                       dtype=geo.prec).to(geo.device)
             # stc1=0, stc2=1
             # x
             self.Laplace[:,:,:,0,0].add_( dxi*dxi )
@@ -120,76 +121,88 @@ class metric_uniform:
     # -----------------------------------------------
     # Interpolation of a scalar to xy-edges
     def interp_sc_xy(self,SC,interp_SC):
-        interp_SC[1:,1:,:].copy_(self.interp_x*self.interp_y*( SC[1:,1: ,:] + SC[:-1,1: ,:] +
-                                                               SC[1:,:-1,:] + SC[:-1,:-1,:] ))
+        interp_SC[1:,1:,:].copy_(self.interp_x*
+                                 self.interp_y*( SC[1:,1: ,:] + SC[:-1,1: ,:] +
+                                                 SC[1:,:-1,:] + SC[:-1,:-1,:] ))
         
     # -----------------------------------------------
     # Interpolation of a scalar to xz-edges
     def interp_sc_xz(self,SC,interp_SC):
-        interp_SC[1:,:,1:].copy_(self.interp_x*self.interp_z*( SC[1:,:,1: ] + SC[:-1,:,1: ] +
-                                                               SC[1:,:,:-1] + SC[:-1,:,:-1] ))
+        interp_SC[1:,:,1:].copy_(self.interp_x*
+                                 self.interp_z*( SC[1:,:,1: ] + SC[:-1,:,1: ] +
+                                                 SC[1:,:,:-1] + SC[:-1,:,:-1] ))
         
     # -----------------------------------------------
     # Interpolation of a scalar to yz-edges
     def interp_sc_yz(self,SC,interp_SC):
-        interp_SC[:,1:,1:].copy_(self.interp_y*self.interp_z*( SC[:,1:,1: ] + SC[:,:-1,1: ] +
-                                                               SC[:,1:,:-1] + SC[:,:-1,:-1] ))
+        interp_SC[:,1:,1:].copy_(self.interp_y*
+                                 self.interp_z*( SC[:,1:,1: ] + SC[:,:-1,1: ] +
+                                                 SC[:,1:,:-1] + SC[:,:-1,:-1] ))
 
 
     # -----------------------------------------------
     # Interpolation of the x-velocity to cell centers
     def interp_u_xm(self,state):
-        state.var_i[:-1,:,:] = 0.5*( state.var[1:,:,:] + state.var[:-1,:,:] )
+        state.var_i[:-1,:,:] = 0.5*( state.var[1: ,:,:] +
+                                     state.var[:-1,:,:] )
         #state.update_border_i()
 
     # -----------------------------------------------
     # Interpolation of the y-velocity to cell centers
     def interp_v_ym(self,state):
-        state.var_i[:,:-1,:] = 0.5*( state.var[:,1:,:] + state.var[:,:-1,:] )
+        state.var_i[:,:-1,:] = 0.5*( state.var[:,1: ,:] +
+                                     state.var[:,:-1,:] )
         #state.update_border_i()
 
     # -----------------------------------------------
     # Interpolation of the z-velocity to cell centers
     def interp_w_zm(self,state):
-        state.var_i[:,:,:-1] = 0.5*( state.var[:,:,1:] + state.var[:,:,:-1] )
+        state.var_i[:,:,:-1] = 0.5*( state.var[:,:,1: ] +
+                                     state.var[:,:,:-1] )
         #state.update_border_i()
 
         
     # ---------------------------------------------------
     # Interpolation of the v- and w-velocities to x-edges
     def interp_vw_x(self,state):
-        state.var_i[1:,:,:] = self.interp_x*( state.var[1:,:,:] + state.var[:-1,:,:] )
+        state.var_i[1:,:,:] = self.interp_x*( state.var[1: ,:,:] +
+                                              state.var[:-1,:,:] )
         #state.update_border_i()
         
     # ---------------------------------------------------
     # Interpolation of the u- and w-velocities to y-edges
     def interp_uw_y(self,state):
-        state.var_i[:,1:,:] = self.interp_y*( state.var[:,1:,:] + state.var[:,:-1,:] )
+        state.var_i[:,1:,:] = self.interp_y*( state.var[:,1: ,:] +
+                                              state.var[:,:-1,:] )
         #state.update_border_i()
 
     # ---------------------------------------------------
     # Interpolation of the u- and v-velocities to z-edges
     def interp_uv_z(self,state):
-        state.var_i[:,:,1:] = self.interp_z*( state.var[:,:,1:] + state.var[:,:,:-1] )
+        state.var_i[:,:,1:] = self.interp_z*( state.var[:,:,1: ] +
+                                              state.var[:,:,:-1] )
         #state.update_border_i()
 
         
     # ----------------------------------------------------
     # Interpolation of cell-centered velocities to x-faces
     def interp_uvwi_x(self,state):
-        state.var_i[1:,:,:] = self.interp_x*( state.var_i[1:,:,:] + state.var_i[:-1,:,:] )
+        state.var_i[1:,:,:] = self.interp_x*( state.var_i[1: ,:,:] +
+                                              state.var_i[:-1,:,:] )
         #state.update_border_i()
         
     # ----------------------------------------------------
     # Interpolation of cell-centered velocities to y-faces
     def interp_uvwi_y(self,state):
-        state.var_i[:,1:,:] = self.interp_y*( state.var_i[:,1:,:] + state.var_i[:,:-1,:] )
+        state.var_i[:,1:,:] = self.interp_y*( state.var_i[:,1: ,:] +
+                                              state.var_i[:,:-1,:] )
         #state.update_border_i()
         
     # ----------------------------------------------------
     # Interpolation of cell-centered velocities to z-faces
     def interp_uvwi_z(self,state):
-        state.var_i[:,:,1:] = self.interp_z*( state.var_i[:,:,1:] + state.var_i[:,:,:-1] )
+        state.var_i[:,:,1:] = self.interp_z*( state.var_i[:,:,1: ] +
+                                              state.var_i[:,:,:-1] )
         #state.update_border_i()
 
 
