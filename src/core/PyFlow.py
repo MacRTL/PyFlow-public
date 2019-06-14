@@ -152,7 +152,12 @@ startTime    = 0.0
 #   SFSmodel options: none, Smagorinsky, gradient, ML
 #SFSmodel = 'none'
 #SFSmodel = 'Smagorinsky'; Cs = 0.18; expFilterFac = 1.0;
-SFSmodel = 'ML'; modelDictName = 'test_model'
+# ML model input
+SFSmodel      = 'ML';
+modelDictName = 'test_model.dict'
+modelDictSave = 'save_model.dict'
+loadModel     = False
+saveModel     = True
 
 # Adjoint training settings
 #   PyFlow will look for a target data file every numCheckpointIt
@@ -194,6 +199,7 @@ if (useTargetData):
 # Configure PyTorch
 # ----------------------------------------------------
 # Offload to GPUs if available
+# Needs update for multi-GPU systems
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
@@ -439,7 +445,7 @@ elif (SFSmodel=='gradient'):
     sfsmodel = sfsmodel_gradient.residual_stress(decomp,geometry,metric)
 elif (SFSmodel=='ML'):
     use_SFSmodel = True
-    sfsmodel = sfsmodel_ML.residual_stress(decomp,geometry,metric,modelDictName)
+    sfsmodel = sfsmodel_ML.residual_stress(decomp,geometry,metric,loadModel,modelDictName)
 else:
     # Construct a blank SFSmodel object
     use_SFSmodel = False
@@ -864,6 +870,9 @@ for itCountOuter in range(numStepsOuter):
         state_u_adj_P.var.copy_( torch.sign(state_u_P.var - state_u_T.var) )
         state_v_adj_P.var.copy_( torch.sign(state_v_P.var - state_v_T.var) )
         state_w_adj_P.var.copy_( torch.sign(state_w_P.var - state_w_T.var) )
+        #state_u_adj_P.var.zero_()
+        #state_v_adj_P.var.zero_()
+        #state_w_adj_P.var.zero_()
         # Normalize
         state_u_adj_P.var.div_ ( nx*ny*nz )
         state_v_adj_P.var.div_ ( nx*ny*nz )
@@ -942,6 +951,22 @@ for itCountOuter in range(numStepsOuter):
                                      ' ',' ',max_resP))
             
         ## END OF ADJOINT INNER LOOP
+
+        # Multiply neural network accumlulated gradients by LES time step
+        for param in sfsmodel.model.parameters():
+            param.grad.data *= simDt
+
+        # Sync the ML model across processes
+        for param in sfsmodel.model.parameters():
+            tensor0   = param.grad.data.cpu().numpy()
+            tensorAvg = comms.parallel_sum(tensor0.ravel())/float(comms.size)
+            tensorOut = torch.tensor(tensorAvg.reshape(np.shape(tensor0)))
+            param.grad.data = tensorOut
+
+        # Write the ML model to disk
+        if (saveModel and decomp.rank==0):
+            print('Saving model...')
+            torch.save(sfsmodel.model.state_dict(),modelDictSave)
                 
         # Resource utilization
         if (decomp.rank==0):

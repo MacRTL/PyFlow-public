@@ -121,7 +121,7 @@ class NeuralNetworkModel2(nn.Module):
 # Machine learning model for the SFS residual stress
 # ----------------------------------------------------
 class residual_stress:
-    def __init__(self,decomp,geo,metric,modelDictName,loadModel=False):
+    def __init__(self,decomp,geo,metric,loadModel=False,modelDictName=None):
         # Default precision and offloading settings
         self.prec = decomp.prec
         self.device = decomp.device
