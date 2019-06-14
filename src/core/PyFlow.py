@@ -121,7 +121,8 @@ if (configName=='restart'):
     #dataFileType  = 'restart'
 
     # Downsampled 1024^3 DNS - needs SGS model
-    inFileDir     = '../../verification/downsampled_LES_restart/dnsbox_1024_Lx0.045_NR_run_2/restart_1024_Lx0.045_NR_Delta16_Down16/test_input_files/'
+    inFileBase    = '../../verification/'
+    inFileDir     = 'downsampled_LES_restart/dnsbox_1024_Lx0.045_NR_run_2/restart_1024_Lx0.045_NR_Delta16_Down16/test_input_files/'
     configFileStr = inFileDir+'config_dnsbox_1024_Lx0.045_NR_Delta16_Down16_0000'
     dataFileBStr  = inFileDir+'dnsbox_1024_Lx0.045_NR_Delta16_Down16_'
     startFileIt   = 20
@@ -156,7 +157,7 @@ SFSmodel = 'ML'; modelDictName = 'test_model'
 # Adjoint training settings
 #   PyFlow will look for a target data file every numCheckpointIt
 adjointTraining = True
-numCheckpointIt = 10
+numCheckpointIt = 5
 
 # Solver settings
 #   advancerName options: Euler, RK4
@@ -853,6 +854,7 @@ for itCountOuter in range(numStepsOuter):
     # ----------------------------------------------------
     if (adjointTraining):
         itCountInner = numStepsInner
+        itCountInnerUp = 0
 
         # Load target state
         targetDataFileStr = dataFileBStr + '{:08d}'.format(startFileIt+itCount)
@@ -866,6 +868,9 @@ for itCountOuter in range(numStepsOuter):
         state_u_adj_P.var.div_ ( nx*ny*nz )
         state_v_adj_P.var.div_ ( nx*ny*nz )
         state_w_adj_P.var.div_ ( nx*ny*nz )
+
+        if (decomp.rank==0):
+            print('Starting adjoint iteration')
         
         while (itCountInner > 0):
 
@@ -921,6 +926,7 @@ for itCountOuter in range(numStepsOuter):
             # ----------------------------------------------------
             # Update the counters
             itCountInner -= 1
+            itCountInnerUp += 1
             simTime -= simDt
             
             # Compute stats
@@ -932,15 +938,16 @@ for itCountOuter in range(numStepsOuter):
             # Print stats
             if (decomp.rank==0):
                 lineStr = "  Adj {:6d}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:9s}   {:9s}    {:8.3E}"
-                print(lineStr.format(itCount-itCountInner,simTime,maxCFL,maxU,maxV,maxW,
+                print(lineStr.format(itCount-itCountInnerUp,simTime,maxCFL,maxU,maxV,maxW,
                                      ' ',' ',max_resP))
-                
-                # Resource utilization
-                mem_usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-                mem_usage /= 1e9
-                print('Adjoint iteration {:2d}, peak mem={:7.5f} GB'.format(itCountInner,mem_usage))
             
         ## END OF ADJOINT INNER LOOP
+                
+        # Resource utilization
+        if (decomp.rank==0):
+            mem_usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            mem_usage /= 1e9
+            print('Done adjoint iteration, peak mem={:7.5f} GB'.format(itCountInner,mem_usage))
 
         # Reload last checkpointed velocity solution
         state_u_P.var.copy_( check_u_P[:,:,:,numStepsInner] )
