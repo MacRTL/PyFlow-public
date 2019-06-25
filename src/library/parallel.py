@@ -2,7 +2,7 @@
 #
 # PyFlow: A GPU-accelerated CFD platform written in Python
 #
-# @file geometry.py
+# @file parallel.py
 #
 # The MIT License (MIT)
 # Copyright (c) 2019 University of Illinois Board of Trustees
