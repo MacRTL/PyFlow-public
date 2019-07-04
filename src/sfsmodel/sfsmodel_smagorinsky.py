@@ -37,14 +37,23 @@ import torch
 # Smagorinsky model for the SFS residual stress
 # ----------------------------------------------------
 class stress_constCs:
-    def __init__(self,geo,metric,CsIn=0.18,expFilterFacIn=1.0):
+    def __init__(self,inputConfig,geo):
+        #,CsIn=0.18,expFilterFacIn=1.0):
 
         # External model type identifier
         self.modelType = 'eddyVisc'
 
         # Model parameters
         # Assuming uniform grid for now
-        self.Cs = CsIn
+        try:
+            self.Cs = inputConfig.Cs
+        except AttributeError:
+            self.Cs = 0.18
+        try:
+            expFilterFacIn = inputConfig.expFilterFac
+        except AttributeError:
+            expFilterFacIn = 1.0
+            
         if (geo.type=='uniform'):
             # expFilterFac is the ratio between the filter width and LES grid size
             self.Delta = geo.dx * expFilterFacIn

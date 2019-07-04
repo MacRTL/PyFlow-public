@@ -34,11 +34,34 @@ import torch
 import sys
 from torch.autograd import Variable
 
+# Load PyFlow modules
+#
+sys.path.append("../data")
+import state
+#
+import pressure
+
+# ----------------------------------------------------
+# Adjoint RHS class
+# ----------------------------------------------------
+class AdjointRHS:
+    def __init__(self,inputConfig,decomp,metric,rho,VISC,sfsmodel,
+                 state_u,state_v,state_w):
+
+        # Allocate RHS objects
+        self.rhs1 = rhs_adjPredictor(decomp,metric,rho,VISC,sfsmodel,state_u,state_v,state_w)
+        if (inputConfig.advancerName[:-1]=="RK"):
+            self.rhs2 = rhs_adjPredictor(decomp,metric,rho,VISC,sfsmodel,state_u,state_v,state_w)
+            self.rhs3 = rhs_adjPredictor(decomp,metric,rho,VISC,sfsmodel,state_u,state_v,state_w)
+            self.rhs4 = rhs_adjPredictor(decomp,metric,rho,VISC,sfsmodel,state_u,state_v,state_w)
+        
+
 # ----------------------------------------------------
 # Navier-Stokes adjoint equation RHS
 # ----------------------------------------------------
 class rhs_adjPredictor:
-    def __init__(self,decomp):
+    def __init__(self,decomp,metric,rho,VISC,sfsmodel,
+                 state_u,state_v,state_w):
         # Default precision and offloading settings
         prec = decomp.prec
         self.device = decomp.device
@@ -61,15 +84,24 @@ class rhs_adjPredictor:
         self.div_vel   = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(decomp.device)
         self.interp_SC = torch.zeros(nxo_,nyo_,nzo_,dtype=prec).to(decomp.device)
 
+        # Save a few pointers
+        self.metric = metric
+        self.rho    = rho
+        self.VISC   = VISC
+        self.sfsmodel = sfsmodel
+        self.state_u  = state_u
+        self.state_v  = state_v
+        self.state_w  = state_w
+
             
     # ----------------------------------------------------
     # Evaluate the adjoint equation RHS
     # ----------------------------------------------------
-    def evaluate(self,state_u_adj,state_v_adj,state_w_adj,
-                 state_u,state_v,state_w,VISC,rho,sfsmodel,metric):
-        imin_ = metric.imin_; imax_ = metric.imax_+1
-        jmin_ = metric.jmin_; jmax_ = metric.jmax_+1
-        kmin_ = metric.kmin_; kmax_ = metric.kmax_+1
+    def evaluate(self,state_u_adj,state_v_adj,state_w_adj):
+
+        imin_ = self.metric.imin_; imax_ = self.metric.imax_+1
+        jmin_ = self.metric.jmin_; jmax_ = self.metric.jmax_+1
+        kmin_ = self.metric.kmin_; kmax_ = self.metric.kmax_+1
         
         # Zero the rhs
         self.rhs_u.zero_()
@@ -77,15 +109,15 @@ class rhs_adjPredictor:
         self.rhs_w.zero_()
         
         #print(self.FX.device)
-        #print(state_u.grad_x.device)
+        #print(self.state_u.grad_x.device)
 
         # Compute velocity gradients for the viscous flux
-        metric.grad_vel_visc(state_u_adj)
-        metric.grad_vel_visc(state_v_adj)
-        metric.grad_vel_visc(state_w_adj)
+        self.metric.grad_vel_visc(state_u_adj)
+        self.metric.grad_vel_visc(state_v_adj)
+        self.metric.grad_vel_visc(state_w_adj)
 
         # Compute velocity divergence for the viscous flux
-        metric.div_vel_over(state_u_adj,state_v_adj,state_w_adj,self.div_vel)
+        self.metric.div_vel_over(state_u_adj,state_v_adj,state_w_adj,self.div_vel)
         self.div_vel.div_( 3.0 )
 
         # Viscous fluxes -- DOUBLE CHECK NON-LAPLACIAN FORM
@@ -94,125 +126,131 @@ class rhs_adjPredictor:
         # xx
         self.FX.copy_( state_u_adj.grad_x )
         self.FX.sub_ ( self.div_vel )
-        self.FX.mul_ ( 2.0*VISC/rho )
+        self.FX.mul_ ( 2.0*self.VISC/self.rho )
         # xy
-        metric.interp_sc_xy(VISC,self.interp_SC)
+        self.metric.interp_sc_xy(self.VISC,self.interp_SC)
         self.FY.copy_( state_u_adj.grad_y )
         self.FY.add_ ( state_v_adj.grad_x )
-        self.FY.mul_ ( self.interp_SC/rho )
+        self.FY.mul_ ( self.interp_SC/self.rho )
         # xz
-        metric.interp_sc_xz(VISC,self.interp_SC)
+        self.metric.interp_sc_xz(self.VISC,self.interp_SC)
         self.FZ.copy_( state_u_adj.grad_z )
         self.FZ.add_ ( state_w_adj.grad_x )
-        self.FZ.mul_ ( self.interp_SC/rho )
+        self.FZ.mul_ ( self.interp_SC/self.rho )
         # Divergence of the viscous flux
-        metric.div_visc(self.FX,self.FY,self.FZ,self.rhs_u)
+        self.metric.div_visc(self.FX,self.FY,self.FZ,self.rhs_u)
         
         # yx
-        metric.interp_sc_xy(VISC,self.interp_SC)
+        self.metric.interp_sc_xy(self.VISC,self.interp_SC)
         self.FX.copy_( state_v_adj.grad_x )
         self.FX.add_ ( state_u_adj.grad_y )
-        self.FX.mul_ ( self.interp_SC/rho )
+        self.FX.mul_ ( self.interp_SC/self.rho )
         # yy
         self.FY.copy_( state_v_adj.grad_y )
         self.FY.sub_ ( self.div_vel )
-        self.FY.mul_ ( 2.0*VISC/rho )
+        self.FY.mul_ ( 2.0*self.VISC/self.rho )
         # yz
-        metric.interp_sc_yz(VISC,self.interp_SC)
+        self.metric.interp_sc_yz(self.VISC,self.interp_SC)
         self.FZ.copy_( state_v_adj.grad_z )
         self.FZ.add_ ( state_w_adj.grad_y )
-        self.FZ.mul_ ( self.interp_SC/rho )
+        self.FZ.mul_ ( self.interp_SC/self.rho )
         # Divergence of the viscous flux
-        metric.div_visc(self.FX,self.FY,self.FZ,self.rhs_v)
+        self.metric.div_visc(self.FX,self.FY,self.FZ,self.rhs_v)
         
         # zx
-        metric.interp_sc_xz(VISC,self.interp_SC)
+        self.metric.interp_sc_xz(self.VISC,self.interp_SC)
         self.FX.copy_( state_w_adj.grad_x )
         self.FX.add_ ( state_u_adj.grad_z )
-        self.FX.mul_ ( self.interp_SC/rho )
+        self.FX.mul_ ( self.interp_SC/self.rho )
         # zy
-        metric.interp_sc_yz(VISC,self.interp_SC)
+        self.metric.interp_sc_yz(self.VISC,self.interp_SC)
         self.FY.copy_( state_w_adj.grad_y )
         self.FY.add_ ( state_v_adj.grad_z )
-        self.FY.mul_ ( self.interp_SC/rho )
+        self.FY.mul_ ( self.interp_SC/self.rho )
         # zz
         self.FZ.copy_( state_w_adj.grad_z )
         self.FZ.sub_ ( self.div_vel )
-        self.FZ.mul_ ( 2.0*VISC/rho )
+        self.FZ.mul_ ( 2.0*self.VISC/self.rho )
         # Divergence of the viscous flux
-        metric.div_visc(self.FX,self.FY,self.FZ,self.rhs_w)
+        self.metric.div_visc(self.FX,self.FY,self.FZ,self.rhs_w)
 
         
         # Cross-advective fluxes -- divergence form
         # -adj(u)*u
-        metric.interp_u_xm(state_u_adj)
-        metric.interp_u_xm(state_u)
-        metric.vel_conv_xx(state_u_adj,state_u,self.rhs_u,sign=-1.0)
+        self.metric.interp_u_xm(state_u_adj)
+        self.metric.interp_u_xm(self.state_u)
+        self.metric.vel_conv_xx(state_u_adj,self.state_u,self.rhs_u,sign=-1.0)
         # -adj(u)*v
-        metric.interp_uw_y(state_u_adj)
-        metric.interp_vw_x(state_v)
-        metric.vel_conv_y(state_u_adj,state_v,self.rhs_u,sign=-1.0)
+        self.metric.interp_uw_y(state_u_adj)
+        self.metric.interp_vw_x(self.state_v)
+        self.metric.vel_conv_y(state_u_adj,self.state_v,self.rhs_u,sign=-1.0)
         # -adj(u)*w
-        metric.interp_uv_z(state_u_adj)
-        metric.interp_vw_x(state_w)
-        metric.vel_conv_z(state_u_adj,state_w,self.rhs_u,sign=-1.0)
+        self.metric.interp_uv_z(state_u_adj)
+        self.metric.interp_vw_x(self.state_w)
+        self.metric.vel_conv_z(state_u_adj,self.state_w,self.rhs_u,sign=-1.0)
         
         # -adj(v)*u
-        metric.interp_vw_x(state_v_adj)
-        metric.interp_uw_y(state_u)
-        metric.vel_conv_x(state_v_adj,state_u,self.rhs_v,sign=-1.0)
+        self.metric.interp_vw_x(state_v_adj)
+        self.metric.interp_uw_y(self.state_u)
+        self.metric.vel_conv_x(state_v_adj,self.state_u,self.rhs_v,sign=-1.0)
         # -adj(v)*v
-        metric.interp_v_ym(state_v_adj)
-        metric.interp_v_ym(state_v)
-        metric.vel_conv_yy(state_v_adj,state_v,self.rhs_v,sign=-1.0)
+        self.metric.interp_v_ym(state_v_adj)
+        self.metric.interp_v_ym(self.state_v)
+        self.metric.vel_conv_yy(state_v_adj,self.state_v,self.rhs_v,sign=-1.0)
         # -adj(v)*w
-        metric.interp_uv_z(state_v_adj)
-        metric.interp_uw_y(state_w)
-        metric.vel_conv_z(state_v_adj,state_w,self.rhs_v,sign=-1.0)
+        self.metric.interp_uv_z(state_v_adj)
+        self.metric.interp_uw_y(self.state_w)
+        self.metric.vel_conv_z(state_v_adj,self.state_w,self.rhs_v,sign=-1.0)
         
         # -adj(w)*u
-        metric.interp_vw_x(state_w_adj)
-        metric.interp_uv_z(state_u)
-        metric.vel_conv_x(state_w_adj,state_u,self.rhs_w,sign=-1.0)
+        self.metric.interp_vw_x(state_w_adj)
+        self.metric.interp_uv_z(self.state_u)
+        self.metric.vel_conv_x(state_w_adj,self.state_u,self.rhs_w,sign=-1.0)
         # -adj(w)*v
-        metric.interp_uw_y(state_w_adj)
-        metric.interp_uv_z(state_v)
-        metric.vel_conv_y(state_w_adj,state_v,self.rhs_w,sign=-1.0)
+        self.metric.interp_uw_y(state_w_adj)
+        self.metric.interp_uv_z(self.state_v)
+        self.metric.vel_conv_y(state_w_adj,self.state_v,self.rhs_w,sign=-1.0)
         # -adj(w)*w
-        metric.interp_w_zm(state_w_adj)
-        metric.interp_w_zm(state_w)
-        metric.vel_conv_zz(state_w_adj,state_w,self.rhs_w,sign=-1.0)
+        self.metric.interp_w_zm(state_w_adj)
+        self.metric.interp_w_zm(self.state_w)
+        self.metric.vel_conv_zz(state_w_adj,self.state_w,self.rhs_w,sign=-1.0)
+
+        #print("Done adj visc")
+        return
+
+    def dont_use(self):
+        print("oops")
 
 
         # Cross-advective fluxes
         #   [JFM] Do these terms have physical meaning?
         # Compute gradients of non-adjoint velocity field
-        metric.grad_vel_adj(state_u,'u')
-        metric.grad_vel_adj(state_v,'v')
-        metric.grad_vel_adj(state_w,'w')
+        self.metric.grad_vel_adj(self.state_u,'u')
+        self.metric.grad_vel_adj(self.state_v,'v')
+        self.metric.grad_vel_adj(self.state_w,'w')
         
         # adj(u) equation - compute at x-face
         # -adj(u)*grad1(u)
-        self.FX.copy_( state_u.grad_x )
+        self.FX.copy_( self.state_u.grad_x )
         self.FX.mul_ ( state_u_adj.var )
         
         # -adj(v)*grad1(v) - compute at xy-edge
         # Interpolate v-adj to x-face
-        metric.interp_v_ym  (state_v_adj)
-        metric.interp_uvwi_x(state_v_adj)
-        self.div_vel.copy_( state_v.grad_x )
-        self.FY.copy_     ( state_v.grad_x )
+        self.metric.interp_v_ym  (state_v_adj)
+        self.metric.interp_uvwi_x(state_v_adj)
+        self.div_vel.copy_( self.state_v.grad_x )
+        self.FY.copy_     ( self.state_v.grad_x )
         self.FY[:,:-1,:].add_( self.div_vel[:,1:,:] )
-        self.FY.mul_( metric.interp_ym )
+        self.FY.mul_( self.metric.interp_ym )
         self.FY.mul_( state_v_adj.var_i )
         
         # -adj(w)*grad1(w) - compute at xz-edge, interpolate to x-face
-        metric.interp_w_zm  (state_w_adj)
-        metric.interp_uvwi_x(state_w_adj)
-        self.div_vel.copy_( state_w.grad_x )
-        self.FZ.copy_     ( state_w.grad_x )
+        self.metric.interp_w_zm  (state_w_adj)
+        self.metric.interp_uvwi_x(state_w_adj)
+        self.div_vel.copy_( self.state_w.grad_x )
+        self.FZ.copy_     ( self.state_w.grad_x )
         self.FZ[:,:,:-1].add_( self.div_vel[:,:,1:] )
-        self.FZ.mul_( metric.interp_zm )
+        self.FZ.mul_( self.metric.interp_zm )
         self.FZ.mul_( state_w_adj.var_i )
 
         # Accumulate to adj(u) RHS
@@ -222,25 +260,25 @@ class rhs_adjPredictor:
 
         # adj(v) equation
         # -adj(u)*grad2(u)
-        metric.interp_u_xm  (state_u_adj)
-        metric.interp_uvwi_y(state_u_adj)
-        self.div_vel.copy_( state_u.grad_y )
-        self.FX.copy_     ( state_u.grad_y )
+        self.metric.interp_u_xm  (state_u_adj)
+        self.metric.interp_uvwi_y(state_u_adj)
+        self.div_vel.copy_( self.state_u.grad_y )
+        self.FX.copy_     ( self.state_u.grad_y )
         self.FX[:-1,:,:].add_( self.div_vel[1:,:,:] )
-        self.FX.mul_( metric.interp_xm )
+        self.FX.mul_( self.metric.interp_xm )
         self.FX.mul_( state_u_adj.var_i )
         
         # -adj(v)*grad2(v)
-        self.FY.copy_( state_v.grad_y )
+        self.FY.copy_( self.state_v.grad_y )
         self.FY.mul_ ( state_v_adj.var )
 
         # -adj(w)*grad2(w)
-        metric.interp_w_zm  (state_w_adj)
-        metric.interp_uvwi_y(state_w_adj)
-        self.div_vel.copy_( state_w.grad_y )
-        self.FZ.copy_     ( state_w.grad_y )
+        self.metric.interp_w_zm  (state_w_adj)
+        self.metric.interp_uvwi_y(state_w_adj)
+        self.div_vel.copy_( self.state_w.grad_y )
+        self.FZ.copy_     ( self.state_w.grad_y )
         self.FZ[:,:,:-1].add_( self.div_vel[:,:,1:] )
-        self.FZ.mul_( metric.interp_zm )
+        self.FZ.mul_( self.metric.interp_zm )
         self.FZ.mul_( state_w_adj.var_i )
 
         # Accumulate to adj(v) RHS
@@ -250,25 +288,25 @@ class rhs_adjPredictor:
 
         # adj(w) equation
         # -adj(u)*grad3(u)
-        metric.interp_u_xm  (state_u_adj)
-        metric.interp_uvwi_z(state_u_adj)
-        self.div_vel.copy_( state_u.grad_z )
-        self.FX.copy_     ( state_u.grad_z )
+        self.metric.interp_u_xm  (state_u_adj)
+        self.metric.interp_uvwi_z(state_u_adj)
+        self.div_vel.copy_( self.state_u.grad_z )
+        self.FX.copy_     ( self.state_u.grad_z )
         self.FX[:-1,:,:].add_( self.div_vel[1:,:,:] )
-        self.FX.mul_( metric.interp_xm )
+        self.FX.mul_( self.metric.interp_xm )
         self.FX.mul_( state_u_adj.var_i )
 
         # -adj(v)*grad3(v)
-        metric.interp_v_ym  (state_v_adj)
-        metric.interp_uvwi_z(state_v_adj)
-        self.div_vel.copy_( state_v.grad_z )
-        self.FY.copy_     ( state_v.grad_z )
+        self.metric.interp_v_ym  (state_v_adj)
+        self.metric.interp_uvwi_z(state_v_adj)
+        self.div_vel.copy_( self.state_v.grad_z )
+        self.FY.copy_     ( self.state_v.grad_z )
         self.FY[:,:-1,:].add_( self.div_vel[:,1:,:] )
-        self.FY.mul_( metric.interp_ym )
+        self.FY.mul_( self.metric.interp_ym )
         self.FY.mul_( state_v_adj.var_i )
 
         # -adj(w)*grad3(w)
-        self.FZ.copy_( state_w.grad_z )
+        self.FZ.copy_( self.state_w.grad_z )
         self.FZ.mul_ ( state_w_adj.var )
 
         # Accumulate to adj(w) RHS
@@ -276,30 +314,28 @@ class rhs_adjPredictor:
         self.rhs_w.sub_( self.FY[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
         self.rhs_w.sub_( self.FZ[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
 
-
-
         # Closure model terms -- delta^t
 
         # Use interpolated variables
         #   --> ML model can be improved by using staggered derivatives internally
-        metric.interp_u_xm( state_u )
-        metric.interp_v_ym( state_v )
-        metric.interp_w_zm( state_w )
+        self.metric.interp_u_xm( self.state_u )
+        self.metric.interp_v_ym( self.state_v )
+        self.metric.interp_w_zm( self.state_w )
 
         # Enable computational graph generation
         #   --> Can memory management be improved by pre-allocating?
-        u_V = Variable( state_u.var_i, requires_grad=True ).to(self.device)
-        v_V = Variable( state_v.var_i, requires_grad=True ).to(self.device)
-        w_V = Variable( state_w.var_i, requires_grad=True ).to(self.device)
+        u_V = Variable( self.state_u.var_i, requires_grad=True ).to(self.device)
+        v_V = Variable( self.state_v.var_i, requires_grad=True ).to(self.device)
+        w_V = Variable( self.state_w.var_i, requires_grad=True ).to(self.device)
         
         # Evaluate the SFS model using PyTorch automatic differentiation
         # Gradients in model inputs need to be computed using non-in-place operations
-        sfsmodel.update(u_V,v_V,w_V,metric,requires_grad=True)
+        sfsmodel.update(u_V,v_V,w_V,self.metric,requires_grad=True)
         
         # Treat the adjoint as a constant when calculating the chain rule
-        metric.interp_u_xm( state_u_adj )
-        metric.interp_v_ym( state_v_adj )
-        metric.interp_w_zm( state_w_adj )
+        self.metric.interp_u_xm( state_u_adj )
+        self.metric.interp_v_ym( state_v_adj )
+        self.metric.interp_w_zm( state_w_adj )
         # Pre-allocate u_A_det, etc?
         u_A_det = Variable(state_u_adj.var_i).detach()
         v_A_det = Variable(state_v_adj.var_i).detach()
@@ -326,13 +362,13 @@ class rhs_adjPredictor:
 
         # Interpolate source terms to cell faces and accumulate to the RHS
         # x
-        metric.interp_sc_x( grad_ML1, self.interp_SC )
+        self.metric.interp_sc_x( grad_ML1, self.interp_SC )
         self.rhs_u.sub_( self.interp_SC[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
         # y
-        metric.interp_sc_y( grad_ML2, self.interp_SC )
+        self.metric.interp_sc_y( grad_ML2, self.interp_SC )
         self.rhs_v.sub_( self.interp_SC[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
         # z
-        metric.interp_sc_z( grad_ML3, self.interp_SC )
+        self.metric.interp_sc_z( grad_ML3, self.interp_SC )
         self.rhs_w.sub_( self.interp_SC[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
 
         # Accumulate the AD gradient to the adjoint equation RHS

@@ -38,12 +38,17 @@ from mpi4py import MPI
 # Parallel communication functions
 # ----------------------------------------------------
 class comms:
-    def __init__(self,dtypeNumpy=np.float32):
+    def __init__(self,IC):
         # Get MPI decomposition info
         self.comm = MPI.COMM_WORLD
         self.rank = self.comm.Get_rank()
         self.size = self.comm.Get_size()
-        self.dtype = dtypeNumpy
+
+        # Data type specifier
+        try:
+            self.dtype = IC.dtypeNumpy
+        except AttributeError:
+            self.dtype = np.float32
 
     def parallel_sum(self,sendBuf):
         if (self.size>1):

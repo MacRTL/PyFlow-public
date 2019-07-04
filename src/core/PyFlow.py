@@ -49,6 +49,7 @@ import resource
 # Load PyFlow modules
 sys.path.append("../data")
 import state
+import domain
 import dataReader as dr
 import constants as const
 import initial_conditions
@@ -62,15 +63,15 @@ import geometry as geo
 sys.path.append("../metric")
 import metric_staggered
 #
-sys.path.append("../solver")
-import velocity
-import pressure
-import adjoint
+#sys.path.append("../solver")
+#import velocity
+#import pressure
+#import adjoint
 #
-sys.path.append("../sfsmodel")
-import sfsmodel_ML
-import sfsmodel_smagorinsky
-import sfsmodel_gradient
+#sys.path.append("../sfsmodel")
+#import sfsmodel_ML
+#import sfsmodel_smagorinsky
+#import sfsmodel_gradient
 
 
 ####### TODO
@@ -133,7 +134,7 @@ class inputConfigClass:
         self.numItDataOut = 20
 
         # Parallel decomposition
-        self.nproc_x = 2
+        self.nproc_x = 1
         self.nproc_y = 1
         self.nproc_z = 1
 
@@ -190,24 +191,16 @@ class inputConfigClass:
             self.targetFileBaseStr = dataFileBStr
             self.numItTargetComp = 50
 
-
+            
+# For now...
 inputConfig = inputConfigClass()
-
-
-# ----------------------------------------------------
-# Configure PyTorch
-# ----------------------------------------------------
-# Offload to GPUs if available
-# Needs update for multi-GPU systems
-#device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-
 
 
 # ----------------------------------------------------
 # Configure simulation domain
 # ----------------------------------------------------
 # Basic parallel operations
-comms = parallel.comms(inputConfig.dtypeNumpy)
+comms = parallel.comms(inputConfig)
 
 # Configure grid sizes
 config = geo.config(inputConfig)
@@ -240,9 +233,6 @@ nx = decomp.nx; ny = decomp.ny; nz = decomp.nz
 # Time step size
 simDt = inputConfig.simDt
 
-# Target data settings
-useTargetData = inputConfig.useTargetData
-
 # ----------------------------------------------------
 # Generate initial conditions
 # ----------------------------------------------------
@@ -259,195 +249,27 @@ geometry = geo.uniform(xGrid,yGrid,zGrid,decomp)
 metric = metric_staggered.metric_uniform(geometry)
 
 
-
 # ----------------------------------------------------
-# Set up initial condition
+# Configure domain: velocity and adjoint states, SFS model
 # ----------------------------------------------------
-IC_u_np = data_IC[:,:,:,0]
-IC_v_np = data_IC[:,:,:,1]
-IC_w_np = data_IC[:,:,:,2]
-IC_p_np = data_IC[:,:,:,3]
-
-IC_zeros_np = np.zeros( (nx_,ny_,nz_) )
-IC_ones_np  = np.ones ( (nx_,ny_,nz_) )
+D = domain.Domain(inputConfig,comms,decomp,data_IC,geometry,
+                  metric,names,startTime)
 
 
-# ----------------------------------------------------
-# Allocate memory for state data
-# ----------------------------------------------------
-# Allocate state data using PyTorch variables
-state_u_P    = state.state_P(decomp,IC_u_np)
-state_v_P    = state.state_P(decomp,IC_v_np)
-state_w_P    = state.state_P(decomp,IC_w_np)
-state_p_P    = state.state_P(decomp,IC_p_np)
-state_DP_P   = state.state_P(decomp,IC_p_np)
 
-# Set up a Numpy mirror to the PyTorch state
-#  --> Used for file I/O
-state_data_all = (state_u_P, state_v_P, state_w_P, state_p_P)
-data_all_CPU   = state.data_all_CPU(decomp,startTime,simDt,
-                                    names[0:4],state_data_all)
-
-# Allocate a temporary velocity state for RK solvers
-if (inputConfig.advancerName[:-1]=="RK"):
-    state_uTmp_P = state.state_P(decomp,IC_u_np)
-    state_vTmp_P = state.state_P(decomp,IC_v_np)
-    state_wTmp_P = state.state_P(decomp,IC_w_np)
-
-# Density
-mu  = inputConfig.mu
-rho = inputConfig.rho
-
-# Allocate pressure source term and local viscosity
-source_P = torch.zeros(nx_,ny_,nz_,dtype=inputConfig.dtypeTorch).to(decomp.device)
-VISC_P   = torch.ones(nxo_,nyo_,nzo_,dtype=inputConfig.dtypeTorch).to(decomp.device)
-VISC_P.mul_(mu)
-
-
-# ----------------------------------------------------
-# Configure adjoint training
-# ----------------------------------------------------
-if (inputConfig.adjointTraining):
-    # Check for a few prerequisites
-    if (inputConfig.SFSmodel!="ML"):
-        if (decomp.rank==0):
-            raise Exception("\nAdjoint training requires ML subfilter model\n")
-    elif (inputConfig.equationMode!="NS"):
-        if (decomp.rank==0):
-            raise Exception("\nAdjoint training requires Navier-Stokes solver\n")
-    else:
-        numCheckpointIt = inputConfig.numCheckpointIt
-        
-        # Allocate the adjoint state
-        state_u_adj_P = state.state_P(decomp,IC_zeros_np)
-        state_v_adj_P = state.state_P(decomp,IC_zeros_np)
-        state_w_adj_P = state.state_P(decomp,IC_zeros_np)
-
-        # Set up a Numpy mirror to the PyTorch adjoint state
-        adjoint_data_all = (state_u_adj_P, state_v_adj_P, state_w_adj_P)
-        data_adj_CPU = state.data_all_CPU(decomp,startTime,simDt,
-                                          names[0:3],adjoint_data_all)
-
-        # Initialize the adjoint RHS object
-        adj_rhs1 = adjoint.rhs_adjPredictor(decomp)
-
-        # Allocate temporary adjoint states and rhs objects for RK solvers
-        if (inputConfig.advancerName[:-1]=="RK"):
-            state_uTmp_adj_P = state.state_P(decomp,IC_zeros_np)
-            state_vTmp_adj_P = state.state_P(decomp,IC_zeros_np)
-            state_wTmp_adj_P = state.state_P(decomp,IC_zeros_np)
-            adj_rhs2 = adjoint.rhs_adjPredictor(decomp)
-            adj_rhs3 = adjoint.rhs_adjPredictor(decomp)
-            adj_rhs4 = adjoint.rhs_adjPredictor(decomp)
-        
-        # Allocate space for checkpointed solutions
-        #  --> Could be moved to adjoint module
-        check_u_P = torch.zeros(nxo_,nyo_,nzo_,numCheckpointIt+1,
-                                dtype=inputConfig.dtypeTorch).to(decomp.device)
-        check_v_P = torch.zeros(nxo_,nyo_,nzo_,numCheckpointIt+1,
-                                dtype=inputConfig.dtypeTorch).to(decomp.device)
-        check_w_P = torch.zeros(nxo_,nyo_,nzo_,numCheckpointIt+1,
-                                dtype=inputConfig.dtypeTorch).to(decomp.device)
-
-        # Set up to use target data
-        useTargetData = True
-        numItTargetComp = numCheckpointIt
-
-
-# ----------------------------------------------------
-# Configure SFS model
-# ----------------------------------------------------
-if (inputConfig.SFSmodel=='Smagorinsky'):
-    use_SFSmodel = True
-    sfsmodel = sfsmodel_smagorinsky.stress_constCs(geometry,metric,inputConfig.Cs,
-                                                   inputConfig.expFilterFac)
-elif (inputConfig.SFSmodel=='gradient'):
-    use_SFSmodel = True
-    sfsmodel = sfsmodel_gradient.residual_stress(decomp,geometry,metric)
-elif (inputConfig.SFSmodel=='ML'):
-    use_SFSmodel = True
-    sfsmodel = sfsmodel_ML.residual_stress(decomp,geometry,metric,
-                                           inputConfig.loadModel,inputConfig.modelDictName)
-else:
-    # Construct a blank SFSmodel object
-    use_SFSmodel = False
-    sfsmodel = sfsmodel_smagorinsky.stress_constCs(geometry,metric)
-
-# Save the molecular viscosity
-if (sfsmodel.modelType=='eddyVisc'):
-    muMolec = mu
 
     
 # ----------------------------------------------------
 # Configure solver
 # ----------------------------------------------------
-if (inputConfig.equationMode=='scalar'):
-    # Scalar advection-diffusion equations
-    if (decomp.rank==0):
-        print("\nSolving scalar advection-diffusion equation")
-
-    # Allocate RHS objects (uMax etc. deprecated)
-    rhs1 = velocity.rhs_scalar(decomp,uMax,vMax,wMax)
-    if (advancerName[:-1]=="RK"):
-        rhs2 = velocity.rhs_scalar(decomp,uMax,vMax,wMax)
-        rhs3 = velocity.rhs_scalar(decomp,uMax,vMax,wMax)
-        rhs4 = velocity.rhs_scalar(decomp,uMax,vMax,wMax)
-        
-elif (inputConfig.equationMode=='NS'):
-    # Navier-Stokes equations
-    if (decomp.rank==0):
-        print("\nSolving Navier-Stokes equations")
-        print("Solver settings: advancer={}, pressure={}"
-              .format(inputConfig.advancerName,inputConfig.pSolverMode))
-
-    # Allocate RHS objects    
-    rhs1 = velocity.rhs_NavierStokes(decomp)
-    if (inputConfig.advancerName[:-1]=="RK"):
-        rhs2 = velocity.rhs_NavierStokes(decomp)
-        rhs3 = velocity.rhs_NavierStokes(decomp)
-        rhs4 = velocity.rhs_NavierStokes(decomp)
-        
-    # Initialize pressure solver
-    if (inputConfig.pSolverMode=='Jacobi'):
-        poisson = pressure.solver_jacobi(comms,decomp,metric,
-                                         geometry,inputConfig.rho,simDt,
-                                         inputConfig.max_pressure_iterations)
-    elif (inputConfig.pSolverMode=='bicgstab'):
-        poisson = pressure.solver_bicgstab(comms,decomp,metric,geometry,inputConfig.rho,simDt,
-                                           inputConfig.min_pressure_residual,
-                                           inputConfig.max_pressure_iterations)
-    if (inputConfig.pSolverMode=='RedBlackGS'):
-        #poisson = pressure.solver_GS_redblack(geometry,rho,simDt,max_pressure_iterations)
-        raise Exception('\nRed-black GS not yet implemented\n')
-        
-else:
-    if (decomp.rank==0):
-        raise Exception("Equation setting not recognized; consequences unknown...")
 
 # Read restart state data in parallel
 if (inputConfig.configName=='restart'):
     if (inputConfig.dataFileType=='restart'):
-        dr.readNGArestart_parallel(inputConfig.dataFileStr,data_all_CPU)
+        dr.readNGArestart_parallel(inputConfig.dataFileStr,D.data_all_CPU)
 
 
 
-# ----------------------------------------------------
-# Allocate memory for target state data
-# ----------------------------------------------------
-if (useTargetData):
-    state_u_T = state.state_P(decomp,IC_zeros_np,need_gradients=False)
-    state_v_T = state.state_P(decomp,IC_zeros_np,need_gradients=False)
-    state_w_T = state.state_P(decomp,IC_zeros_np,need_gradients=False)
-    
-    #  Set up a Numpy mirror to the target state data
-    target_data_all = (state_u_T, state_v_T, state_w_T)
-    target_data_all_CPU = state.data_all_CPU(decomp,startTime,simDt,names[0:3],target_data_all)
-
-    # Read the target data file
-    #   Adjoint training reads target files in outer iteration loop
-    if (not inputConfig.adjointTraining):
-        targetDataFileStr = targetFileBaseStr + '{:08d}'.format(inputConfig.startFileIt)
-        dr.readNGArestart_parallel(targetDataFileStr,target_data_all_CPU)
 
     # JFM - for SFS model verification
     #dr.readNGArestart_parallel(dataFileStr,target_data_all_CPU)
@@ -470,11 +292,6 @@ if (useTargetData):
 
     
 # Clean up
-del IC_u_np
-del IC_v_np
-del IC_w_np
-del IC_p_np
-del IC_zeros_np
 del data_IC
 
 
@@ -497,18 +314,18 @@ simTime  = startTime
 stopTime = startTime + inputConfig.numIt*simDt
 
 # Synchronize the overlap cells before stepping
-state_u_P.update_border()
-state_v_P.update_border()
-state_w_P.update_border()
-state_p_P.update_border()
+D.state_u_P.update_border()
+D.state_v_P.update_border()
+D.state_w_P.update_border()
+D.state_p_P.update_border()
 
 # Write the initial data file
 timeStr = "{:12.7E}".format(simTime)
 # Root process writes the header
 if (decomp.rank==0):
-    dr.writeNGArestart(inputConfig.fNameOut+'_'+timeStr,data_all_CPU,True)
+    dr.writeNGArestart(inputConfig.fNameOut+'_'+timeStr,D.data_all_CPU,True)
 # All processes write data
-dr.writeNGArestart_parallel(inputConfig.fNameOut+'_'+timeStr,data_all_CPU)
+dr.writeNGArestart_parallel(inputConfig.fNameOut+'_'+timeStr,D.data_all_CPU)
 
 # Write the stdout header
 if (inputConfig.equationMode=='NS'):
@@ -521,22 +338,22 @@ else:
         print(headStr.format("Step","Time","max CFL","max U","max V","max W"))
 
 # Compute resolved kinetic energy and velocity rms
-initEnergy = comms.parallel_sum(np.sum( data_all_CPU.read(0)**2 +
-                                        data_all_CPU.read(1)**2 +
-                                        data_all_CPU.read(2)**2 ))
+initEnergy = comms.parallel_sum(np.sum( D.data_all_CPU.read(0)**2 +
+                                        D.data_all_CPU.read(1)**2 +
+                                        D.data_all_CPU.read(2)**2 ))
 #rmsVel = np.sqrt(initEnergy/decomp.N)
 if (inputConfig.equationMode=='NS'):
     # Compute the initial divergence
-    metric.div_vel(state_u_P,state_v_P,state_w_P,source_P)
-    maxDivg = comms.parallel_max(torch.max(torch.abs(source_P)).cpu().numpy())
+    metric.div_vel(D.state_u_P,D.state_v_P,D.state_w_P,D.source_P)
+    maxDivg = comms.parallel_max(torch.max(torch.abs(D.source_P)).cpu().numpy())
     
 # Write initial condition stats to screen
-maxU = comms.parallel_max(data_all_CPU.absmax(0))
-maxV = comms.parallel_max(data_all_CPU.absmax(1))
-maxW = comms.parallel_max(data_all_CPU.absmax(2))
-TKE  = comms.parallel_sum(np.sum( data_all_CPU.read(0)**2 +
-                                  data_all_CPU.read(1)**2 +
-                                  data_all_CPU.read(2)**2 ))*0.5/float(decomp.N)
+maxU = comms.parallel_max(D.data_all_CPU.absmax(0))
+maxV = comms.parallel_max(D.data_all_CPU.absmax(1))
+maxW = comms.parallel_max(D.data_all_CPU.absmax(2))
+TKE  = comms.parallel_sum(np.sum( D.data_all_CPU.read(0)**2 +
+                                  D.data_all_CPU.read(1)**2 +
+                                  D.data_all_CPU.read(2)**2 ))*0.5/float(decomp.N)
 if (decomp.rank==0):
     maxCFL = max((maxU/geometry.dx,maxV/geometry.dy,maxW/geometry.dz))*simDt
     lineStr = "  {:10d}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}"
@@ -546,7 +363,7 @@ if (decomp.rank==0):
 if (inputConfig.plotState):
     timeStr = "{:12.7E}_{}".format(simTime,decomp.rank)
     # Plot the initial state
-    decomp.plot_fig_root(dr,state_u_P.var,"state_U_"+str(0)+"_"+timeStr)
+    decomp.plot_fig_root(dr,D.state_u_P.var,"state_U_"+str(0)+"_"+timeStr)
 
     
 # ----------------------------------------------------
@@ -561,8 +378,8 @@ itCount = 0
 # Configure the main simulation loop
 if (inputConfig.adjointTraining):
     # Adjoint training: divide outer loop into checkpointed inner loops
-    numStepsOuter = inputConfig.numIt//numCheckpointIt
-    numStepsInner = numCheckpointIt
+    numStepsOuter = inputConfig.numIt//D.numCheckpointIt
+    numStepsInner = D.numCheckpointIt
 else:
     # Forward solver only
     numStepsOuter = 1
@@ -576,9 +393,9 @@ for itCountOuter in range(numStepsOuter):
 
     # Checkpoint the velocity initial condition
     if (inputConfig.adjointTraining):
-        check_u_P[:,:,:,itCountInner].copy_(state_u_P.var)
-        check_v_P[:,:,:,itCountInner].copy_(state_v_P.var)
-        check_w_P[:,:,:,itCountInner].copy_(state_w_P.var)
+        D.check_u_P[:,:,:,itCountInner].copy_(D.state_u_P.var)
+        D.check_v_P[:,:,:,itCountInner].copy_(D.state_v_P.var)
+        D.check_w_P[:,:,:,itCountInner].copy_(D.state_w_P.var)
     
     # ----------------------------------------------------
     # Forward inner loop
@@ -591,105 +408,35 @@ for itCountOuter in range(numStepsOuter):
         # Velocity prediction step
         # ----------------------------------------------------
 
-        # Evaluate SFS model
-        if (use_SFSmodel):
-            if (sfsmodel.modelType=='eddyVisc'):
-                muEddy = sfsmodel.eddyVisc(state_u_P,state_v_P,state_w_P,rho,metric)
+        # Evaluate SFS model --- MOVE TO DOMAIN
+        if (D.use_SFSmodel):
+            if (D.sfsmodel.modelType=='eddyVisc'):
+                muEddy = D.sfsmodel.eddyVisc(D.state_u_P,D.state_v_P,D.state_w_P,rho,metric)
                 VISC_P.copy_( muMolec + muEddy )
-            elif (sfsmodel.modelType=='tensor'):
-                sfsmodel.update(state_u_P,state_v_P,state_w_P,metric)
+            elif (D.sfsmodel.modelType=='tensor'):
+                D.sfsmodel.update(D.state_u_P,D.state_v_P,D.state_w_P,metric)
             # --> Source-type models: evaluate inside the RHS
-            #elif (sfsmodel.modelType=='source'):
-            #    sfsmodel.update(state_u_P,state_v_P,state_w_P,metric)
-                
-        # Compute velocity prediction
-        if (inputConfig.advancerName=="Euler"):
-            # rhs
-            rhs1.evaluate(state_u_P,state_v_P,state_w_P,VISC_P,rho,sfsmodel,metric)
+            #elif (D.sfsmodel.modelType=='source'):
+            #    D.sfsmodel.update(D.state_u_P,D.state_v_P,D.state_w_P,metric)
 
-            # Update the state
-            state_u_P.var = state_u_P.var + rhs1.rhs_u*simDt
-            state_v_P.var = state_v_P.var + rhs1.rhs_v*simDt
-            state_w_P.var = state_w_P.var + rhs1.rhs_w*simDt
 
-        elif (inputConfig.advancerName=="RK4"):
-            
-            # Stage 1
-            rhs1.evaluate(state_u_P,state_v_P,state_w_P,VISC_P,rho,sfsmodel,metric)
-            
-            # Stage 2
-            state_uTmp_P.ZAXPY(0.5*simDt,rhs1.rhs_u,state_u_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
-            state_vTmp_P.ZAXPY(0.5*simDt,rhs1.rhs_v,state_v_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
-            state_wTmp_P.ZAXPY(0.5*simDt,rhs1.rhs_w,state_w_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
-            rhs2.evaluate(state_uTmp_P,state_vTmp_P,state_wTmp_P,VISC_P,rho,sfsmodel,metric)
-
-            # Stage 3
-            state_uTmp_P.ZAXPY(0.5*simDt,rhs2.rhs_u,state_u_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
-            state_vTmp_P.ZAXPY(0.5*simDt,rhs2.rhs_v,state_v_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
-            state_wTmp_P.ZAXPY(0.5*simDt,rhs2.rhs_w,state_w_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
-            rhs3.evaluate(state_uTmp_P,state_vTmp_P,state_wTmp_P,VISC_P,rho,sfsmodel,metric)
-
-            # Stage 4
-            state_uTmp_P.ZAXPY(simDt,rhs3.rhs_u,state_u_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
-            state_vTmp_P.ZAXPY(simDt,rhs3.rhs_v,state_v_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
-            state_wTmp_P.ZAXPY(simDt,rhs3.rhs_w,state_w_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
-            rhs4.evaluate(state_uTmp_P,state_vTmp_P,state_wTmp_P,VISC_P,rho,sfsmodel,metric)
-
-            # Update the state
-            state_u_P.update( state_u_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1]
-                              + simDt/6.0*( rhs1.rhs_u + 2.0*rhs2.rhs_u + 2.0*rhs3.rhs_u + rhs4.rhs_u ) )
-            state_v_P.update( state_v_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1]
-                              + simDt/6.0*( rhs1.rhs_v + 2.0*rhs2.rhs_v + 2.0*rhs3.rhs_v + rhs4.rhs_v ) )
-            state_w_P.update( state_w_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1]
-                              + simDt/6.0*( rhs1.rhs_w + 2.0*rhs2.rhs_w + 2.0*rhs3.rhs_w + rhs4.rhs_w ) )
-            
-
-        
         # ----------------------------------------------------
-        # Pressure Poisson equation
+        # Compute the forward step
         # ----------------------------------------------------
+        D.forwardStep(simDt)
         
-        # 1. Currently using Chorin's original fractional step method
-        #   (essentially Lie splitting); unclear interpretation of
-        #   predictor step RHS w/o pressure. Modern fractional-step
-        #   (based on midpoint method) would be better.
-
-        # 2. Boundary conditions: zero normal gradient. Note: only
-        #   satisfies local mass conservation; global mass
-        #   conservation needs to be enforced in open systems before
-        #   solving Poisson equation, e.g., by rescaling source_P.
-
-        if (inputConfig.equationMode=='NS'):
-            # Divergence of the predicted velocity field
-            metric.div_vel(state_u_P,state_v_P,state_w_P,source_P)
-            
-            # Integral of the Poisson eqn RHS
-            #int_RP = comms.parallel_sum(torch.sum(source_P).cpu().numpy())
-
-            # Solve the Poisson equation
-            max_resP = poisson.solve(state_DP_P,state_p_P,source_P)
-
         
-            # ----------------------------------------------------
-            # Velocity correction step
-            # ----------------------------------------------------
 
-            # Compute pressure gradients
-            metric.grad_P(state_DP_P)
-
-            # Update the velocity correction
-            state_u_P.vel_corr(state_DP_P.grad_x,simDt/rho)
-            state_v_P.vel_corr(state_DP_P.grad_y,simDt/rho)
-            state_w_P.vel_corr(state_DP_P.grad_z,simDt/rho)
+        #if (inputConfig.equationMode=='NS'):
 
         
         # ----------------------------------------------------
         # Checkpoint the velocity solution
         # ----------------------------------------------------
         if (inputConfig.adjointTraining):
-            check_u_P[:,:,:,itCountInner+1].copy_(state_u_P.var)
-            check_v_P[:,:,:,itCountInner+1].copy_(state_v_P.var)
-            check_w_P[:,:,:,itCountInner+1].copy_(state_w_P.var)
+            D.check_u_P[:,:,:,itCountInner+1].copy_(D.state_u_P.var)
+            D.check_v_P[:,:,:,itCountInner+1].copy_(D.state_v_P.var)
+            D.check_w_P[:,:,:,itCountInner+1].copy_(D.state_w_P.var)
             
                       
         # ----------------------------------------------------
@@ -702,27 +449,27 @@ for itCountOuter in range(numStepsOuter):
         simTimeCheckpoint = simTime
         
         # Compute stats
-        maxU = comms.parallel_max(data_all_CPU.absmax(0))
-        maxV = comms.parallel_max(data_all_CPU.absmax(1))
-        maxW = comms.parallel_max(data_all_CPU.absmax(2))
+        maxU = comms.parallel_max(D.data_all_CPU.absmax(0))
+        maxV = comms.parallel_max(D.data_all_CPU.absmax(1))
+        maxW = comms.parallel_max(D.data_all_CPU.absmax(2))
         maxCFL = max((maxU/geometry.dx,maxV/geometry.dy,maxW/geometry.dz))*simDt
-        TKE  = comms.parallel_sum(np.sum( data_all_CPU.read(0)**2 +
-                                          data_all_CPU.read(1)**2 +
-                                          data_all_CPU.read(2)**2 ))*0.5/float(decomp.N)
-        #rmsVel = comms.parallel_sum(np.sum( data_all_CPU.read(0)**2 +
-        #                                    data_all_CPU.read(1)**2 +
-        #                                    data_all_CPU.read(2)**2 ))
+        TKE  = comms.parallel_sum(np.sum( D.data_all_CPU.read(0)**2 +
+                                          D.data_all_CPU.read(1)**2 +
+                                          D.data_all_CPU.read(2)**2 ))*0.5/float(decomp.N)
+        #rmsVel = comms.parallel_sum(np.sum( D.data_all_CPU.read(0)**2 +
+        #                                    D.data_all_CPU.read(1)**2 +
+        #                                    D.data_all_CPU.read(2)**2 ))
         #rmsVel = np.sqrt(rmsVel/decomp.N)
         if (inputConfig.equationMode=='NS'):
             # Compute the final divergence
-            metric.div_vel(state_u_P,state_v_P,state_w_P,source_P)
-            maxDivg = comms.parallel_max(torch.max(torch.abs(source_P)).cpu().numpy())
+            metric.div_vel(D.state_u_P,D.state_v_P,D.state_w_P,D.source_P)
+            maxDivg = comms.parallel_max(torch.max(torch.abs(D.source_P)).cpu().numpy())
         
         # Write stats
         if (inputConfig.equationMode=='NS'):
             if (decomp.rank==0):
                 lineStr = "  {:10d}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}    {:8.3E}"
-                print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW,TKE,maxDivg,max_resP))
+                print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW,TKE,maxDivg,D.max_resP))
         else:
             if (decomp.rank==0):
                 lineStr = "  {:10d}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}"
@@ -731,20 +478,20 @@ for itCountOuter in range(numStepsOuter):
         # Write output
         if (np.mod(itCount,inputConfig.numItDataOut)==0):
             # Write data to disk
-            data_all_CPU.time = simTime
-            data_all_CPU.dt   = simDt
+            D.data_all_CPU.time = simTime
+            D.data_all_CPU.dt   = simDt
             timeStr = "{:12.7E}".format(simTime)
             if (decomp.rank==0):
-                dr.writeNGArestart(inputConfig.fNameOut+'_'+timeStr,data_all_CPU,True)
-            dr.writeNGArestart_parallel(inputConfig.fNameOut+'_'+timeStr,data_all_CPU)
+                dr.writeNGArestart(inputConfig.fNameOut+'_'+timeStr,D.data_all_CPU,True)
+            dr.writeNGArestart_parallel(inputConfig.fNameOut+'_'+timeStr,D.data_all_CPU)
 
         if (inputConfig.plotState and np.mod(itCount,inputConfig.numItPlotOut)==0):
             timeStr = "{:12.7E}_{}".format(simTime,decomp.rank)
-            decomp.plot_fig_root(dr,state_u_P.var,"state_U_"+str(itCount)+"_"+timeStr)
+            decomp.plot_fig_root(dr,D.state_u_P.var,"state_U_"+str(itCount)+"_"+timeStr)
 
 
         # Compare to target DNS data
-        if (useTargetData and np.mod(itCount,numItTargetComp)==0 and not inputConfig.adjointTraining):
+        if (D.useTargetData and np.mod(itCount,D.numItTargetComp)==0 and not inputConfig.adjointTraining):
             # Only on root processor for now
             targetFileIt  = inputConfig.startFileIt+itCount
             targetFileStr = targetFileBaseStr + str(targetFileIt)
@@ -764,12 +511,12 @@ for itCountOuter in range(numStepsOuter):
 
             # L1 error of x-velocity field
             print(data_all_CPU.read(0)[0,0,0])
-            print(np.max(target_data_all_CPU.read(0)))
-            print(target_data_all_CPU.read(0)[0,0,0])
+            print(np.max(D.target_data_all_CPU.read(0)))
+            print(D.target_data_all_CPU.read(0)[0,0,0])
             maxU_sim = comms.parallel_max(np.max(np.abs( data_all_CPU.read(0) )))
-            maxU_t   = comms.parallel_max(np.max(np.abs( target_data_all_CPU.read(0) )))
+            maxU_t   = comms.parallel_max(np.max(np.abs( D.target_data_all_CPU.read(0) )))
             L1_error = (np.mean(np.abs( data_all_CPU.read(0) -
-                                        target_data_all_CPU.read(0) )))
+                                        D.target_data_all_CPU.read(0) )))
             #/(geometry.Nx*geometry.Ny*geometry.Nz)
                                           
             if (decomp.rank==0):
@@ -789,19 +536,19 @@ for itCountOuter in range(numStepsOuter):
 
         # Load target state
         targetDataFileStr = inputConfig.dataFileBStr + '{:08d}'.format(inputConfig.startFileIt+itCount)
-        dr.readNGArestart_parallel(targetDataFileStr,target_data_all_CPU)
+        dr.readNGArestart_parallel(targetDataFileStr,D.target_data_all_CPU)
 
         # Set the adjoint initial condition to the mean absolute error
-        state_u_adj_P.var.copy_( torch.sign(state_u_P.var - state_u_T.var) )
-        state_v_adj_P.var.copy_( torch.sign(state_v_P.var - state_v_T.var) )
-        state_w_adj_P.var.copy_( torch.sign(state_w_P.var - state_w_T.var) )
-        #state_u_adj_P.var.zero_()
-        #state_v_adj_P.var.zero_()
-        #state_w_adj_P.var.zero_()
+        D.state_u_adj_P.var.copy_( torch.sign(D.state_u_P.var - D.state_u_T.var) )
+        D.state_v_adj_P.var.copy_( torch.sign(D.state_v_P.var - D.state_v_T.var) )
+        D.state_w_adj_P.var.copy_( torch.sign(D.state_w_P.var - D.state_w_T.var) )
+        #D.state_u_adj_P.var.zero_()
+        #D.state_v_adj_P.var.zero_()
+        #D.state_w_adj_P.var.zero_()
         # Normalize
-        state_u_adj_P.var.div_ ( nx*ny*nz )
-        state_v_adj_P.var.div_ ( nx*ny*nz )
-        state_w_adj_P.var.div_ ( nx*ny*nz )
+        D.state_u_adj_P.var.div_ ( nx*ny*nz )
+        D.state_v_adj_P.var.div_ ( nx*ny*nz )
+        D.state_w_adj_P.var.div_ ( nx*ny*nz )
 
         if (decomp.rank==0):
             print('Starting adjoint iteration')
@@ -811,79 +558,17 @@ for itCountOuter in range(numStepsOuter):
             # Load the checkpointed velocity solution at time 't'
             #   Overlap cells are already synced in the checkpointed solutions
             # --> JFM: check correct time is loaded??
-            state_u_P.var.copy_( check_u_P[:,:,:,itCountInner] )
-            state_v_P.var.copy_( check_v_P[:,:,:,itCountInner] )
-            state_w_P.var.copy_( check_w_P[:,:,:,itCountInner] )
+            D.state_u_P.var.copy_( D.check_u_P[:,:,:,itCountInner] )
+            D.state_v_P.var.copy_( D.check_v_P[:,:,:,itCountInner] )
+            D.state_w_P.var.copy_( D.check_w_P[:,:,:,itCountInner] )
 
             
             # ----------------------------------------------------
-            # Adjoint 'pressure' iteration
+            # Compute the adjoint step
             # ----------------------------------------------------
-            # Divergence of the adjoint velocity field
-            metric.div_vel(state_u_adj_P,state_v_adj_P,state_w_adj_P,source_P)
-
-            # Solve the Poisson equation
-            max_resP = poisson.solve(state_DP_P,state_p_P,source_P)
+            D.adjointStep(simDt)
 
             
-            # ----------------------------------------------------
-            # Adjoint corrector step: \hat{u}^*
-            # ----------------------------------------------------
-            # Compute 'pressure' gradients
-            metric.grad_P(state_DP_P)
-
-            # Update the adjoint solution
-            #   Note negative sign
-            state_u_adj_P.vel_corr(state_DP_P.grad_x, -simDt/rho)
-            state_v_adj_P.vel_corr(state_DP_P.grad_y, -simDt/rho)
-            state_w_adj_P.vel_corr(state_DP_P.grad_z, -simDt/rho)
-
-            
-            # ----------------------------------------------------
-            # Adjoint predictor step: \hat{u}^t
-            # ----------------------------------------------------
-            if (inputConfig.advancerName=="Euler"):
-                
-                # Adjoint equation rhs
-                adj_rhs1.evaluate(state_u_adj_P,state_v_adj_P,state_w_adj_P,
-                                  state_u_P,state_v_P,state_w_P,VISC_P,rho,sfsmodel,metric)
-                
-                # Update the adjoint state
-                state_u_adj_P.update( state_u_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1] + simDt*adj_rhs1.rhs_u )
-                state_v_adj_P.update( state_v_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1] + simDt*adj_rhs1.rhs_v )
-                state_w_adj_P.update( state_w_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1] + simDt*adj_rhs1.rhs_w )
-
-            elif (inputConfig.advancerName=="RK4"):
-                
-                # Stage 1
-                adj_rhs1.evaluate(state_u_adj_P,state_v_adj_P,state_w_adj_P,
-                                  state_u_P,state_v_P,state_w_P,VISC_P,rho,sfsmodel,metric)
-                # Stage 2
-                state_uTmp_adj_P.ZAXPY(0.5*simDt,adj_rhs1.rhs_u,state_u_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
-                state_vTmp_adj_P.ZAXPY(0.5*simDt,adj_rhs1.rhs_v,state_v_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
-                state_wTmp_adj_P.ZAXPY(0.5*simDt,adj_rhs1.rhs_w,state_w_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
-                adj_rhs2.evaluate(state_uTmp_adj_P,state_vTmp_adj_P,state_wTmp_adj_P,
-                                  state_u_P,state_v_P,state_w_P,VISC_P,rho,sfsmodel,metric)
-                # Stage 3
-                state_uTmp_adj_P.ZAXPY(0.5*simDt,adj_rhs2.rhs_u,state_u_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
-                state_vTmp_adj_P.ZAXPY(0.5*simDt,adj_rhs2.rhs_v,state_v_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
-                state_wTmp_adj_P.ZAXPY(0.5*simDt,adj_rhs2.rhs_w,state_w_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
-                adj_rhs3.evaluate(state_uTmp_adj_P,state_vTmp_adj_P,state_wTmp_adj_P,
-                                  state_u_P,state_v_P,state_w_P,VISC_P,rho,sfsmodel,metric)
-                # Stage 4
-                state_uTmp_adj_P.ZAXPY(0.5*simDt,adj_rhs3.rhs_u,state_u_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
-                state_vTmp_adj_P.ZAXPY(0.5*simDt,adj_rhs3.rhs_v,state_v_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
-                state_wTmp_adj_P.ZAXPY(0.5*simDt,adj_rhs3.rhs_w,state_w_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
-                adj_rhs4.evaluate(state_uTmp_adj_P,state_vTmp_adj_P,state_wTmp_adj_P,
-                                  state_u_P,state_v_P,state_w_P,VISC_P,rho,sfsmodel,metric)
-
-                # Update the adjoint state
-                state_u_adj_P.update( state_u_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1]
-                                      + simDt/6.0*(adj_rhs1.rhs_u + 2.0*adj_rhs2.rhs_u + 2.0*adj_rhs3.rhs_u + adj_rhs4.rhs_u) )
-                state_v_adj_P.update( state_v_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1]
-                                      + simDt/6.0*(adj_rhs1.rhs_v + 2.0*adj_rhs2.rhs_v + 2.0*adj_rhs3.rhs_v + adj_rhs4.rhs_v) )
-                state_w_adj_P.update( state_w_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1]
-                                      + simDt/6.0*(adj_rhs1.rhs_w + 2.0*adj_rhs2.rhs_w + 2.0*adj_rhs3.rhs_w + adj_rhs4.rhs_w) )
                 
             
             # ----------------------------------------------------
@@ -895,34 +580,25 @@ for itCountOuter in range(numStepsOuter):
             simTime -= simDt
             
             # Compute stats
-            maxU = comms.parallel_max(data_adj_CPU.absmax(0))
-            maxV = comms.parallel_max(data_adj_CPU.absmax(1))
-            maxW = comms.parallel_max(data_adj_CPU.absmax(2))
+            maxU = comms.parallel_max(D.data_adj_CPU.absmax(0))
+            maxV = comms.parallel_max(D.data_adj_CPU.absmax(1))
+            maxW = comms.parallel_max(D.data_adj_CPU.absmax(2))
             maxCFL = max((maxU/geometry.dx,maxV/geometry.dy,maxW/geometry.dz))*simDt
 
             # Print stats
             if (decomp.rank==0):
                 lineStr = "  Adj {:6d}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:9s}   {:9s}    {:8.3E}"
                 print(lineStr.format(itCount-itCountInnerUp,simTime,maxCFL,maxU,maxV,maxW,
-                                     ' ',' ',max_resP))
+                                     ' ',' ',D.max_resP))
             
         ## END OF ADJOINT INNER LOOP
 
-        # Multiply neural network accumlulated gradients by LES time step
-        for param in sfsmodel.model.parameters():
-            param.grad.data *= simDt
-
-        # Sync the ML model across processes
-        for param in sfsmodel.model.parameters():
-            tensor0   = param.grad.data.cpu().numpy()
-            tensorAvg = comms.parallel_sum(tensor0.ravel())/float(comms.size)
-            tensorOut = torch.tensor(tensorAvg.reshape(np.shape(tensor0)))
-            param.grad.data = tensorOut
+        # Finalize the ML model and sync across processors
+        D.sfsmodel.finalize(comms)
 
         # Write the ML model to disk
-        if (saveModel and decomp.rank==0):
-            print('Saving model...')
-            torch.save(sfsmodel.model.state_dict(),modelDictSave)
+        if (decomp.rank==0):
+            D.sfsmodel.save()
                 
         # Resource utilization
         if (decomp.rank==0):
@@ -931,9 +607,9 @@ for itCountOuter in range(numStepsOuter):
             print('Done adjoint iteration, peak mem={:7.5f} GB'.format(itCountInner,mem_usage))
 
         # Reload last checkpointed velocity solution
-        state_u_P.var.copy_( check_u_P[:,:,:,numStepsInner] )
-        state_v_P.var.copy_( check_v_P[:,:,:,numStepsInner] )
-        state_w_P.var.copy_( check_w_P[:,:,:,numStepsInner] )
+        D.state_u_P.var.copy_( D.check_u_P[:,:,:,numStepsInner] )
+        D.state_v_P.var.copy_( D.check_v_P[:,:,:,numStepsInner] )
+        D.state_w_P.var.copy_( D.check_w_P[:,:,:,numStepsInner] )
 
         # Restore simulation time
         simTime = simTimeCheckpoint

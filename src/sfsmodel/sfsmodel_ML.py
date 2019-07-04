@@ -121,13 +121,18 @@ class NeuralNetworkModel2(nn.Module):
 # Machine learning model for the SFS residual stress
 # ----------------------------------------------------
 class residual_stress:
-    def __init__(self,decomp,geo,metric,loadModel=False,modelDictName=None):
+    def __init__(self,inputConfig,decomp,geo):
+        #,loadModel=False,modelDictName=None):
+        
         # Default precision and offloading settings
         self.prec = decomp.prec
         self.device = decomp.device
 
         # External model type identifier
         self.modelType = 'source'
+
+        # Time step size
+        self.simDt = inputConfig.simDt
 
         # Data sizes
         nx_ = decomp.nx_
@@ -156,8 +161,23 @@ class residual_stress:
         self.model = NeuralNetworkModel2()
 
         # Load model
+        try:
+            loadModel = inputConfig.loadModel
+        except AttributeError:
+            loadModel = False
+        try:
+            modelDictName = inputConfig.modelDictName
+        except AttributeError:
+            loadModel = False
         if (loadModel):
             self.model.load_state_dict(torch.load(modelDictName))
+
+        # Model save settings
+        try:
+            modelDictSave  = inputConfig.modelDictSave
+            self.saveModel = True
+        except AttributeError:
+            self.saveModel = False
 
         # Offload model
         self.model.to(self.device)
@@ -180,8 +200,31 @@ class residual_stress:
         
         
     # ----------------------------------------------------
+    # Save the model
+    def save(self):
+        if (self.saveModel):
+            print('Saving model...')
+            torch.save(self.model.state_dict(),self.modelDictSave)
+        
+        
+    # ----------------------------------------------------
+    # Finalize the model
+    def finalize(self,comms):
+        # Multiply neural network accumlulated gradients by LES time step
+        for param in self.model.parameters():
+            param.grad.data *= self.simDt
+
+        # Sync the ML model across processes
+        for param in self.model.parameters():
+            tensor0   = param.grad.data.cpu().numpy()
+            tensorAvg = comms.parallel_sum(tensor0.ravel())/float(comms.size)
+            tensorOut = torch.tensor(tensorAvg.reshape(np.shape(tensor0)))
+            param.grad.data = tensorOut
+        
+        
+    # ----------------------------------------------------
     # Evaluate the model
-    def update(self,u_P,v_P,w_P,metric,requires_grad=False):
+    def update(self,u_P,v_P,w_P,requires_grad=False):
 
         # Set precision for ML model evaluation
         float_u_P = u_P.type(torch.FloatTensor).to(self.device)

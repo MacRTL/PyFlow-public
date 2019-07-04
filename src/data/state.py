@@ -135,7 +135,12 @@ class state_P:
 
         # Communicate the initial condition in the overlap cells
         self.update_border()
-    
+
+    def interior(self):
+        # Return just the interior of the domain
+        return self.var[self.imin_:self.imax_+1,
+                        self.jmin_:self.jmax_+1,
+                        self.kmin_:self.kmax_+1]
         
     def update_border(self):
         # Update the overlap cells
