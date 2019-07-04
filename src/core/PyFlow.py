@@ -76,8 +76,7 @@ import sfsmodel_gradient
 #  1. Non-periodic BCs
 #  2. Midpoint fractional-step
 #  3. RK3
-#  4. Krylov - GPU
-#  5. Non-uniform grid
+#  4. Non-uniform grid
 
 
 # ----------------------------------------------------
@@ -419,6 +418,15 @@ if (adjointTraining):
 
         # Initialize the adjoint RHS object
         adj_rhs1 = adjoint.rhs_adjPredictor(decomp)
+
+        # Allocate temporary adjoint states and rhs objects for RK solvers
+        if (advancerName[:-1]=="RK"):
+            state_uTmp_adj_P = state.state_P(decomp,IC_zeros_np)
+            state_vTmp_adj_P = state.state_P(decomp,IC_zeros_np)
+            state_wTmp_adj_P = state.state_P(decomp,IC_zeros_np)
+            adj_rhs2 = adjoint.rhs_adjPredictor(decomp)
+            adj_rhs3 = adjoint.rhs_adjPredictor(decomp)
+            adj_rhs4 = adjoint.rhs_adjPredictor(decomp)
         
         # Allocate space for checkpointed solutions
         #  --> Could be moved to adjoint module
@@ -917,18 +925,49 @@ for itCountOuter in range(numStepsOuter):
             # ----------------------------------------------------
             # Adjoint predictor step: \hat{u}^t
             # ----------------------------------------------------
-            # Evaluate the adjoint equation rhs
-            adj_rhs1.evaluate(state_u_adj_P,state_v_adj_P,state_w_adj_P,
-                              state_u_P,state_v_P,state_w_P,VISC_P,rho,sfsmodel,metric)
+            if (advancerName=="Euler"):
+                
+                # Adjoint equation rhs
+                adj_rhs1.evaluate(state_u_adj_P,state_v_adj_P,state_w_adj_P,
+                                  state_u_P,state_v_P,state_w_P,VISC_P,rho,sfsmodel,metric)
+                
+                # Update the adjoint state
+                state_u_adj_P.update( state_u_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1] + simDt*adj_rhs1.rhs_u )
+                state_v_adj_P.update( state_v_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1] + simDt*adj_rhs1.rhs_v )
+                state_w_adj_P.update( state_w_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1] + simDt*adj_rhs1.rhs_w )
 
-            # Update the adjoint state using explicit Euler
-            state_u_adj_P.update( state_u_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1]
-                                  + simDt * adj_rhs1.rhs_u )
-            state_v_adj_P.update( state_v_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1]
-                                  + simDt * adj_rhs1.rhs_v )
-            state_w_adj_P.update( state_w_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1]
-                                  + simDt * adj_rhs1.rhs_w )
-            
+            elif (advancerName=="RK4"):
+                
+                # Stage 1
+                adj_rhs1.evaluate(state_u_adj_P,state_v_adj_P,state_w_adj_P,
+                                  state_u_P,state_v_P,state_w_P,VISC_P,rho,sfsmodel,metric)
+                # Stage 2
+                state_uTmp_adj_P.ZAXPY(0.5*simDt,adj_rhs1.rhs_u,state_u_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
+                state_vTmp_adj_P.ZAXPY(0.5*simDt,adj_rhs1.rhs_v,state_v_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
+                state_wTmp_adj_P.ZAXPY(0.5*simDt,adj_rhs1.rhs_w,state_w_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
+                adj_rhs2.evaluate(state_uTmp_adj_P,state_vTmp_adj_P,state_wTmp_adj_P,
+                                  state_u_P,state_v_P,state_w_P,VISC_P,rho,sfsmodel,metric)
+                # Stage 3
+                state_uTmp_adj_P.ZAXPY(0.5*simDt,adj_rhs2.rhs_u,state_u_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
+                state_vTmp_adj_P.ZAXPY(0.5*simDt,adj_rhs2.rhs_v,state_v_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
+                state_wTmp_adj_P.ZAXPY(0.5*simDt,adj_rhs2.rhs_w,state_w_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
+                adj_rhs3.evaluate(state_uTmp_adj_P,state_vTmp_adj_P,state_wTmp_adj_P,
+                                  state_u_P,state_v_P,state_w_P,VISC_P,rho,sfsmodel,metric)
+                # Stage 4
+                state_uTmp_adj_P.ZAXPY(0.5*simDt,adj_rhs3.rhs_u,state_u_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
+                state_vTmp_adj_P.ZAXPY(0.5*simDt,adj_rhs3.rhs_v,state_v_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
+                state_wTmp_adj_P.ZAXPY(0.5*simDt,adj_rhs3.rhs_w,state_w_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1])
+                adj_rhs4.evaluate(state_uTmp_adj_P,state_vTmp_adj_P,state_wTmp_adj_P,
+                                  state_u_P,state_v_P,state_w_P,VISC_P,rho,sfsmodel,metric)
+
+                # Update the adjoint state
+                state_u_adj_P.update( state_u_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1]
+                                      + simDt/6.0*(adj_rhs1.rhs_u + 2.0*adj_rhs2.rhs_u + 2.0*adj_rhs3.rhs_u + adj_rhs4.rhs_u) )
+                state_v_adj_P.update( state_v_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1]
+                                      + simDt/6.0*(adj_rhs1.rhs_v + 2.0*adj_rhs2.rhs_v + 2.0*adj_rhs3.rhs_v + adj_rhs4.rhs_v) )
+                state_w_adj_P.update( state_w_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1]
+                                      + simDt/6.0*(adj_rhs1.rhs_w + 2.0*adj_rhs2.rhs_w + 2.0*adj_rhs3.rhs_w + adj_rhs4.rhs_w) )
+                
             
             # ----------------------------------------------------
             # Post-step tasks
@@ -1031,3 +1070,6 @@ if (plotState):
     # Print a pretty picture
     timeStr = "{:12.7E}_{}".format(simTime,decomp.rank)
     decomp.plot_fig_root(dr,state_u_P.var,"state_U_"+str(itCount)+"_"+timeStr)
+
+
+    
