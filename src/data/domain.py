@@ -232,8 +232,8 @@ class Domain:
             self.forwardAdvancer = advancer.Euler(self.state_u_P,self.state_v_P,self.state_w_P,
                                                   self.forwardRHS)
             if (inputConfig.adjointTraining):
-                self.adjointAdvancer = advancer.Euler(self.state_u_adj_P,self.state_v_adj_P,self.state_w_adj_P,
-                                                      self.adjointRHS)
+                self.adjointAdvancer = advancer.Euler(self.state_u_adj_P,self.state_v_adj_P,
+                                                      self.state_w_adj_P,self.adjointRHS)
 
         elif (inputConfig.advancerName=="RK4"):
             self.forwardAdvancer = advancer.RK4(self.state_u_P,self.state_uTmp_P,
@@ -276,7 +276,19 @@ class Domain:
     # Forward domain step
     # ----------------------------------------------------
     def forwardStep(self,simDt):
-
+   
+        # ----------------------------------------------------
+        # Evaluate the SFS model
+        #
+        if (self.use_SFSmodel):
+            if (self.sfsmodel.modelType=='eddyVisc'):
+                muEddy = self.sfsmodel.eddyVisc(self.state_u_P,self.state_v_P,self.state_w_P,
+                                                self.rho,self.metric)
+                self.VISC_P.copy_( self.muMolec + muEddy )
+            elif (self.sfsmodel.modelType=='tensor'):
+                self.sfsmodel.update(self.state_u_P,self.state_v_P,self.state_w_P,self.metric)
+            # --> Source-type models: evaluate inside the RHS
+            
         # ----------------------------------------------------
         # Velocity predictor step
         #

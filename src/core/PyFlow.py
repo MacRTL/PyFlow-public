@@ -35,10 +35,10 @@
 import numpy as np
 import sys
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
-from torch.autograd import Variable
+#import torch.nn as nn
+#import torch.nn.functional as F
+#import torch.optim as optim
+#from torch.autograd import Variable
 
 import time
 import copy
@@ -134,7 +134,7 @@ class inputConfigClass:
         self.numItDataOut = 20
 
         # Parallel decomposition
-        self.nproc_x = 1
+        self.nproc_x = 2
         self.nproc_y = 1
         self.nproc_z = 1
 
@@ -403,31 +403,11 @@ for itCountOuter in range(numStepsOuter):
     while (simTime < stopTime and itCountInner < numStepsInner):
 
         # [JFM] need new sub-iteration loop
-        
-        # ----------------------------------------------------
-        # Velocity prediction step
-        # ----------------------------------------------------
-
-        # Evaluate SFS model --- MOVE TO DOMAIN
-        if (D.use_SFSmodel):
-            if (D.sfsmodel.modelType=='eddyVisc'):
-                muEddy = D.sfsmodel.eddyVisc(D.state_u_P,D.state_v_P,D.state_w_P,rho,metric)
-                VISC_P.copy_( muMolec + muEddy )
-            elif (D.sfsmodel.modelType=='tensor'):
-                D.sfsmodel.update(D.state_u_P,D.state_v_P,D.state_w_P,metric)
-            # --> Source-type models: evaluate inside the RHS
-            #elif (D.sfsmodel.modelType=='source'):
-            #    D.sfsmodel.update(D.state_u_P,D.state_v_P,D.state_w_P,metric)
-
 
         # ----------------------------------------------------
-        # Compute the forward step
+        # Evaluate the forward step
         # ----------------------------------------------------
         D.forwardStep(simDt)
-        
-        
-
-        #if (inputConfig.equationMode=='NS'):
 
         
         # ----------------------------------------------------
@@ -564,12 +544,10 @@ for itCountOuter in range(numStepsOuter):
 
             
             # ----------------------------------------------------
-            # Compute the adjoint step
+            # Evaluate the adjoint step
             # ----------------------------------------------------
             D.adjointStep(simDt)
-
             
-                
             
             # ----------------------------------------------------
             # Post-step tasks

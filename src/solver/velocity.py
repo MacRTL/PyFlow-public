@@ -320,11 +320,11 @@ class rhs_NavierStokes:
         self.metric.div_visc(self.FX,self.FY,self.FZ,self.rhs_w)
 
         #print("Done forward visc")
-        return
+        #return
 
     
-    def dont_use(self):
-        print("oops")
+    #def dont_use(self):
+        #print("oops")
 
         
         # Advective fluxes
@@ -367,14 +367,14 @@ class rhs_NavierStokes:
         
         # Source-type SFS models, including ML models
         if (self.sfsmodel.modelType=='source'):
-            print("Adding NN")
+            #print("Adding NN")
             # Use interpolated variables
             #  --> ML model can be improved by using staggered derivatives internally
             self.metric.interp_u_xm( state_u )
             self.metric.interp_v_ym( state_v )
             self.metric.interp_w_zm( state_w )
             
-            # Evaluate the model
+            # Evaluate the model - can we do this once per time step?
             self.sfsmodel.update(state_u.var_i,state_v.var_i,state_w.var_i)
 
             # Interpolate source terms to cell faces and accumulate to the RHS

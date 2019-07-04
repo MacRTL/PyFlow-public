@@ -216,10 +216,10 @@ class rhs_adjPredictor:
         self.metric.vel_conv_zz(state_w_adj,self.state_w,self.rhs_w,sign=-1.0)
 
         #print("Done adj visc")
-        return
+        #return
 
-    def dont_use(self):
-        print("oops")
+    #def dont_use(self):
+        #print("oops")
 
 
         # Cross-advective fluxes
@@ -330,7 +330,7 @@ class rhs_adjPredictor:
         
         # Evaluate the SFS model using PyTorch automatic differentiation
         # Gradients in model inputs need to be computed using non-in-place operations
-        sfsmodel.update(u_V,v_V,w_V,self.metric,requires_grad=True)
+        self.sfsmodel.update(u_V,v_V,w_V,requires_grad=True)
         
         # Treat the adjoint as a constant when calculating the chain rule
         self.metric.interp_u_xm( state_u_adj )
@@ -344,9 +344,9 @@ class rhs_adjPredictor:
         #print(u_A_det.size())
         
         # Compute g
-        g = ( torch.sum(sfsmodel.GX[:,:,:,0]*u_A_det) +
-              torch.sum(sfsmodel.GY[:,:,:,0]*v_A_det) +
-              torch.sum(sfsmodel.GZ[:,:,:,0]*w_A_det) )
+        g = ( torch.sum(self.sfsmodel.GX[:,:,:,0]*u_A_det) +
+              torch.sum(self.sfsmodel.GY[:,:,:,0]*v_A_det) +
+              torch.sum(self.sfsmodel.GZ[:,:,:,0]*w_A_det) )
 
         #print(g.size())
         
@@ -372,9 +372,9 @@ class rhs_adjPredictor:
         self.rhs_w.sub_( self.interp_SC[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
 
         # Accumulate the AD gradient to the adjoint equation RHS
-        #self.rhs_u.sub_( sfsmodel.GX[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
-        #self.rhs_v.sub_( sfsmodel.GY[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
-        #self.rhs_w.sub_( sfsmodel.GZ[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+        #self.rhs_u.sub_( self.sfsmodel.GX[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+        #self.rhs_v.sub_( self.sfsmodel.GY[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+        #self.rhs_w.sub_( self.sfsmodel.GZ[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
 
         # Clean up
         del g
