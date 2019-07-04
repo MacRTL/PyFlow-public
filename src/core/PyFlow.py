@@ -412,33 +412,32 @@ def run(inputConfig):
     # ----------------------------------------------------
     
     # Write the final state to disk
-    data_all_CPU.time = simTime
-    data_all_CPU.dt   = simDt
+    D.data_all_CPU.time = simTime
+    D.data_all_CPU.dt   = simDt
     timeStr = "{:12.7E}".format(simTime)
     if (decomp.rank==0):
-        dr.writeNGArestart(inputConfig.fNameOut+'_'+timeStr,data_all_CPU,True)
-    dr.writeNGArestart_parallel(inputConfig.fNameOut+'_'+timeStr,data_all_CPU)
-            
-    #Diff = state_u_P.var - Variable( torch.FloatTensor( np.matrix( u_DNS_downsamples[T_factor*(i+1)]).T ) )
-    if (useTargetData):
-        Diff = state_u_P.var - target_P
-        Loss_i = torch.mean( torch.abs( Diff ) )
-        Loss = Loss + Loss_i
-        error = np.mean(np.abs( state_u_P.var.cpu().numpy() -  target_P.cpu().numpy() ) )
+        dr.writeNGArestart(inputConfig.fNameOut+'_'+timeStr,D.data_all_CPU,True)
+    dr.writeNGArestart_parallel(inputConfig.fNameOut+'_'+timeStr,D.data_all_CPU)
+    
+    #if (useTargetData):
+    #    Diff = D.state_u_P.var - target_P
+    #    Loss_i = torch.mean( torch.abs( Diff ) )
+    #    Loss = Loss + Loss_i
+    #    error = np.mean(np.abs( D.state_u_P.var.cpu().numpy() -  target_P.cpu().numpy() ) )
         
     #Loss_np = Loss.cpu().numpy()
 
     time2 = time.time()
     time_elapsed = time2 - time1
     
-    test = torch.mean( state_u_P.var)
+    test = torch.mean( D.state_u_P.var)
     
     # Compute the final energy
-    finalEnergy = comms.parallel_sum(np.sum( data_all_CPU.read(0)**2 +
-                                             data_all_CPU.read(1)**2 +
-                                             data_all_CPU.read(2)**2 ))*0.5
+    finalEnergy = comms.parallel_sum(np.sum( D.data_all_CPU.read(0)**2 +
+                                             D.data_all_CPU.read(1)**2 +
+                                             D.data_all_CPU.read(2)**2 ))*0.5
     
-    if (useTargetData):
+    if (False): #useTargetData):
         if (decomp.rank==0):
             print(itCount,test,error,time_elapsed)
     else:
@@ -452,5 +451,11 @@ def run(inputConfig):
         timeStr = "{:12.7E}_{}".format(simTime,decomp.rank)
         decomp.plot_fig_root(dr,state_u_P.var,"state_U_"+str(itCount)+"_"+timeStr)
 
+        
+    # Return data as required
+    if (inputConfig.adjointVerification):
+        return 1.0 # new_obj
+
+    
 ## END run
     
