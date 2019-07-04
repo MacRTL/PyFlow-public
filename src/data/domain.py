@@ -187,9 +187,9 @@ class Domain:
             # Read the target data file
             #   Adjoint training reads target files in outer iteration loop
             if (not inputConfig.adjointTraining):
-                self.targetDataFileStr = inputConfig.targetFileBaseStr + \
+                targetDataFileStr = inputConfig.targetFileBaseStr + \
                     '{:08d}'.format(inputConfig.startFileIt)
-                dr.readNGArestart_parallel(self.targetDataFileStr,self.target_data_all_CPU)
+                dr.readNGArestart_parallel(targetDataFileStr,self.target_data_all_CPU)
 
                 
         # ----------------------------------------------------
@@ -206,11 +206,14 @@ class Domain:
         else:
             # Construct a blank SFSmodel object
             self.use_SFSmodel = False
-            self.sfsmodel = None #sfsmodel_smagorinsky.stress_constCs(geometry,metric)
+            self.sfsmodel = sfsmodel_smagorinsky.stress_constCs(inputConfig,geometry)
             
         # Save the molecular viscosity
         if (self.sfsmodel.modelType=='eddyVisc'):
             self.muMolec = self.mu
+
+        if (decomp.rank==0 and self.use_SFSmodel):
+            print('\nSFS model: {}'.format(inputConfig.SFSmodel))
 
         
         # ----------------------------------------------------
