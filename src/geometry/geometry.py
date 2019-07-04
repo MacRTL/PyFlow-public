@@ -30,8 +30,45 @@
 # ------------------------------------------------------------------------
 
 import numpy as np
+import dataReader as dr
 import torch
         
+
+# ----------------------------------------------------
+# Configure grid sizes needed for parallel decomp
+# ----------------------------------------------------
+class config:
+    def __init__(self,IC):
+        # Domain sizes if performing a restart
+        if (IC.configName=='restart'):
+            if (IC.dataFileType=='restart'):
+                # Read grid data from an NGA config file
+                self.xGrid,self.yGrid,self.zGrid,xper,yper,zper \
+                    = dr.readNGAconfig(IC.configFileStr)
+                self.Nx = len(self.xGrid)-1
+                self.Ny = len(self.yGrid)-1
+                self.Nz = len(self.zGrid)-1
+                self.isper = [xper,yper,zper]
+                
+            elif (IC.dataFileType=='volume'):
+                # Read grid and state data from a volume-format file
+                self.xGrid,self.yGrid,self.zGrid,names,dataTime,data \
+                    = dr.readNGA(IC.dataFileStr)
+                self.Nx = len(self.xGrid)
+                self.Ny = len(self.yGrid)
+                self.Nz = len(self.zGrid)
+                self.isper = [0,0,0]
+
+        # Domain sizes from general config
+        else:
+            self.xGrid = None
+            self.yGrid = None
+            self.zGrid = None
+            self.Nx = IC.Nx
+            self.Ny = IC.Ny
+            self.Nz = IC.Nz
+            self.isper = [0,0,0]
+                
 
 # ----------------------------------------------------
 # General uniform geometry

@@ -104,14 +104,20 @@ class comms:
 # MPI decomposition
 # ----------------------------------------------------
 class decomp:
-    def __init__(self,Nx,Ny,Nz,nproc_decomp,isper,device,
-                 dtypeTorch=torch.float32,dtypeNumpy=np.float32):
-
-        self.prec = dtypeTorch
-        self.dtypeNumpy = dtypeNumpy
+    def __init__(self,IC,config):
+                 #Nx,Ny,Nz,nproc_decomp,isper,device,
+                 #dtypeTorch=torch.float32,dtypeNumpy=np.float32):
+        try:
+            self.prec = IC.dtypeTorch
+        except AttributeError:
+            self.prec = torch.float32
+        try:
+            self.dtypeNumpy = IC.dtypeNumpy
+        except AttributeError:
+            self.dtypeNumpy = np.float32
 
         # Offloading settings
-        self.device = device
+        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         
         # ---------------------------------------
         # MPI communicators
@@ -122,9 +128,10 @@ class decomp:
         self.size = self.comm.Get_size()
 
         # User-specified decomposition
-        self.npx = nproc_decomp[0]
-        self.npy = nproc_decomp[1]
-        self.npz = nproc_decomp[2]
+        self.npx = IC.nproc_x
+        self.npy = IC.nproc_y
+        self.npz = IC.nproc_z
+        nproc_decomp = [self.npx,self.npy,self.npz]
         
         # Check the decomp
         if (self.size!=self.npx*self.npy*self.npz):
@@ -140,7 +147,8 @@ class decomp:
         #isper = [0,0]
 
         # Cartesian communicator to determine coordinates
-        self.cartComm = self.comm.Create_cart(nproc_decomp, periods=isper, reorder=True)
+        self.cartComm = self.comm.Create_cart(nproc_decomp, periods=config.isper,
+                                              reorder=True)
         
         # Proc's location in the cartesian communicator
         self.iproc, self.jproc, self.kproc = self.cartComm.Get_coords(self.rank)
@@ -172,10 +180,10 @@ class decomp:
         # Domain decomposition
         
         # Grid size
-        self.N  = Nx*Ny*Nz
-        self.nx = Nx
-        self.ny = Ny
-        self.nz = Nz
+        self.N  = config.Nx*config.Ny*config.Nz
+        self.nx = config.Nx
+        self.ny = config.Ny
+        self.nz = config.Nz
 
         # Overlap size
         self.nover = 2

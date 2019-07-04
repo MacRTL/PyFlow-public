@@ -51,6 +51,7 @@ sys.path.append("../data")
 import state
 import dataReader as dr
 import constants as const
+import initial_conditions
 #
 sys.path.append("../library")
 import parallel
@@ -84,114 +85,113 @@ import sfsmodel_gradient
 # ----------------------------------------------------
 
 # [JFM] move this to an input file passed as a command-line arg
+class inputConfigClass:
+    def __init__(self):
+        # Simulation geometry
+        #   Options: restart, periodicGaussian, uniform, notAchannel
+        self.configName = "restart"
+        #configName = "periodicGaussian"
+        #configName = "uniform"
+        #configName = "notAchannel"
+        #self.Nx   = 2
+        #self.Ny   = 2
+        #self.Nz   = 2
+        #self.Nx   = 64
+        #self.Ny   = 64
+        #self.Nz   = 64
+        #self.Lx   = 1.0
+        #self.Ly   = 1.0
+        #self.Lz   = 1.0
+        #isper = [1,1,1]
+        
+        # Example case in git repository
+        #inFileDir     = '../../examples/'
+        #configFileStr = inFileDir+'config_dnsbox_128_Lx0.0056'
+        #dataFileBStr  = inFileDir+'dnsbox_128_128_Lx0.0056.1_2.50000E-04'
+        #dataFileStr   = inFileDir+'data_dnsbox_128_Lx0.0056.1_2.50000E-04'
+        #dataFileType  = 'restart'
+        
+        # Isotropic 128^3 DNS - verification vs. NGA
+        #inFileDir     = '../../verification/dnsbox_128_Lx0.0056_NR/test_input_files/'
+        #configFileStr = inFileDir+'config_dnsbox_128_Lx0.0056'
+        #dataFileBStr  = inFileDir+'dnsbox_128_128_Lx0.0056.1_5.00000E-04'
+        #dataFileStr   = inFileDir+'data_dnsbox_128_Lx0.0056.1_5.00000E-04'
+        #dataFileType  = 'restart'
+        
+        # Downsampled 1024^3 DNS - needs SGS model
+        self.inFileBase    = '../../verification/'
+        self.inFileDir     = self.inFileBase+'downsampled_LES_restart/dnsbox_1024_Lx0.045_NR_run_2/restart_1024_Lx0.045_NR_Delta16_Down16/test_input_files/'
+        self.configFileStr = self.inFileDir+'config_dnsbox_1024_Lx0.045_NR_Delta16_Down16_0000'
+        self.dataFileBStr  = self.inFileDir+'dnsbox_1024_Lx0.045_NR_Delta16_Down16_'
+        self.startFileIt   = 20
+        self.dataFileStr   = self.dataFileBStr + '{:08d}'.format(self.startFileIt)
+        self.dataFileType  = 'restart'
+        
+        # Data file to write
+        #self.fNameOut     = 'data_dnsbox_128_Lx0.0056'
+        self.fNameOut     = 'dnsbox_1024_Lx0.045_NR_Delta16_Down16_00000020'
+        self.numItDataOut = 20
 
-# Simulation geometry
-#   Options: restart, periodicGaussian, uniform, notAchannel
-configName = "restart"
-#configName = "periodicGaussian"
-#configName = "uniform"
-#configName = "notAchannel"
-#configNx   = 2
-#configNy   = 2
-#configNz   = 2
-#configNx   = 64
-#configNy   = 64
-#configNz   = 64
-#configLx   = 1.0
-#configLy   = 1.0
-#configLz   = 1.0
-#isper = [1,1,1]
+        # Parallel decomposition
+        self.nproc_x = 2
+        self.nproc_y = 1
+        self.nproc_z = 1
 
-# Data and config files to read
-if (configName=='restart'):
+        # Physical constants
+        self.mu  = 1.8678e-5
+        self.rho = 1.2
 
-    # Example case in git repository
-    #inFileDir     = '../../examples/'
-    #configFileStr = inFileDir+'config_dnsbox_128_Lx0.0056'
-    #dataFileBStr  = inFileDir+'dnsbox_128_128_Lx0.0056.1_2.50000E-04'
-    #dataFileStr   = inFileDir+'data_dnsbox_128_Lx0.0056.1_2.50000E-04'
-    #dataFileType  = 'restart'
+        # Time step info
+        self.simDt        = 1.0e-6
+        self.numIt        = 50
+        self.startTime    = 0.0
+        
+        # SFS model settings
+        #   SFSmodel options: none, Smagorinsky, gradient, ML
+        #self.SFSmodel = 'none'
+        #self.SFSmodel = 'Smagorinsky'; self.Cs = 0.18; self.expFilterFac = 1.0;
+        # ML model input
+        self.SFSmodel      = 'ML';
+        self.modelDictName = 'test_model.dict'
+        self.modelDictSave = 'save_model.dict'
+        self.loadModel     = False
+        self.saveModel     = True
 
-    # Isotropic 128^3 DNS - verification vs. NGA
-    #inFileDir     = '../../verification/dnsbox_128_Lx0.0056_NR/test_input_files/'
-    #configFileStr = inFileDir+'config_dnsbox_128_Lx0.0056'
-    #dataFileBStr  = inFileDir+'dnsbox_128_128_Lx0.0056.1_5.00000E-04'
-    #dataFileStr   = inFileDir+'data_dnsbox_128_Lx0.0056.1_5.00000E-04'
-    #dataFileType  = 'restart'
+        # Adjoint training settings
+        #   PyFlow will look for a target data file every numCheckpointIt
+        self.adjointTraining = True
+        self.numCheckpointIt = 5
 
-    # Downsampled 1024^3 DNS - needs SGS model
-    inFileBase    = '../../verification/'
-    inFileDir     = inFileBase+'downsampled_LES_restart/dnsbox_1024_Lx0.045_NR_run_2/restart_1024_Lx0.045_NR_Delta16_Down16/test_input_files/'
-    configFileStr = inFileDir+'config_dnsbox_1024_Lx0.045_NR_Delta16_Down16_0000'
-    dataFileBStr  = inFileDir+'dnsbox_1024_Lx0.045_NR_Delta16_Down16_'
-    startFileIt   = 20
-    dataFileStr   = dataFileBStr + '{:08d}'.format(startFileIt)
-    dataFileType  = 'restart'
-
-# Data file to write
-#fNameOut     = 'data_dnsbox_128_Lx0.0056'
-fNameOut     = 'dnsbox_1024_Lx0.045_NR_Delta16_Down16_00000020'
-numItDataOut = 20
-
-# Parallel decomposition
-nproc_x = 2
-nproc_y = 1
-nproc_z = 1
-
-# Physical constants
-mu  = 1.8678e-5
-rho = 1.2
-
-# Time step info
-simDt        = 1.0e-6
-numIt        = 50
-startTime    = 0.0
-
-# SFS model settings
-#   SFSmodel options: none, Smagorinsky, gradient, ML
-#SFSmodel = 'none'
-#SFSmodel = 'Smagorinsky'; Cs = 0.18; expFilterFac = 1.0;
-# ML model input
-SFSmodel      = 'ML';
-modelDictName = 'test_model.dict'
-modelDictSave = 'save_model.dict'
-loadModel     = False
-saveModel     = True
-
-# Adjoint training settings
-#   PyFlow will look for a target data file every numCheckpointIt
-adjointTraining = True
-numCheckpointIt = 5
-
-# Solver settings
-#   advancerName options: Euler, RK4
-#   equationMode options: scalar, NS
-#   pSolverMode options:  Jacobi, bicgstab
-#
-advancerName = "RK4"
-equationMode = "NS"
-#
-# Pressure solver settings
-pSolverMode             = "bicgstab"
-min_pressure_residual   = 1e-9
-max_pressure_iterations = 150
-#
-# Accuracy and precision settings
-genericOrder = 2
-dtypeTorch   = torch.float64
-dtypeNumpy   = np.float64
-
-# Output options
-plotState    = False
-numItPlotOut = 20
-
-# Comparison options (deprecated)
-useTargetData = False
-if (useTargetData):
-    targetFileBaseStr = dataFileBStr
-    numItTargetComp = 50
+        # Solver settings
+        #   advancerName options: Euler, RK4
+        #   equationMode options: scalar, NS
+        #   pSolverMode options:  Jacobi, bicgstab
+        #
+        self.advancerName = "RK4"
+        self.equationMode = "NS"
+        #
+        # Pressure solver settings
+        self.pSolverMode             = "bicgstab"
+        self.min_pressure_residual   = 1e-9
+        self.max_pressure_iterations = 150
+        #
+        # Accuracy and precision settings
+        self.genericOrder = 2
+        self.dtypeTorch   = torch.float64
+        self.dtypeNumpy   = np.float64
+        
+        # Output options
+        self.plotState    = False
+        self.numItPlotOut = 20
+        
+        # Comparison options (deprecated)
+        self.useTargetData = False
+        if (self.useTargetData):
+            self.targetFileBaseStr = dataFileBStr
+            self.numItTargetComp = 50
 
 
+inputConfig = inputConfigClass()
 
 
 # ----------------------------------------------------
@@ -199,7 +199,7 @@ if (useTargetData):
 # ----------------------------------------------------
 # Offload to GPUs if available
 # Needs update for multi-GPU systems
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+#device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
 
@@ -207,32 +207,18 @@ device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 # Configure simulation domain
 # ----------------------------------------------------
 # Basic parallel operations
-comms = parallel.comms(dtypeNumpy)
+comms = parallel.comms(inputConfig.dtypeNumpy)
 
-# Domain sizes if performing a restart
-if (configName=='restart'):
-    if (dataFileType=='restart'):
-        # Read grid data from an NGA config file
-        xGrid,yGrid,zGrid,xper,yper,zper = dr.readNGAconfig(configFileStr)
-        configNx = len(xGrid)-1
-        configNy = len(yGrid)-1
-        configNz = len(zGrid)-1
-        isper = [xper,yper,zper]
-
-    elif (dataFileType=='volume'):
-        # Read grid and state data from a volume-format file
-        xGrid,yGrid,zGrid,names,dataTime,data = dr.readNGA(dataFileStr)
-        configNx = len(xGrid)
-        configNy = len(yGrid)
-        configNz = len(zGrid)
+# Configure grid sizes
+config = geo.config(inputConfig)
 
 # Domain decomposition
-nproc  = [nproc_x,nproc_y,nproc_z]
-decomp = parallel.decomp(configNx,configNy,configNz,nproc,isper,device,
-                         dtypeTorch,dtypeNumpy)
+decomp = parallel.decomp(inputConfig,config)
+    #configNx,configNy,configNz,nproc,isper,device,
+    #                     dtypeTorch,dtypeNumpy)
 
-if ((nproc_x>1 and nproc_y>1) or (nproc_z>1)):
-    plotState = False
+if ((inputConfig.nproc_x>1 and inputConfig.nproc_y>1) or (inputConfig.nproc_z>1)):
+    inputConfig.plotState = False
 
 # Local grid sizes
 nx_ = decomp.nx_
@@ -251,97 +237,17 @@ nzo_ = decomp.nzo_
 # Global grid sizes
 nx = decomp.nx; ny = decomp.ny; nz = decomp.nz
 
+# Time step size
+simDt = inputConfig.simDt
 
+# Target data settings
+useTargetData = inputConfig.useTargetData
 
 # ----------------------------------------------------
-# Configure initial conditions
+# Generate initial conditions
 # ----------------------------------------------------
-# Default state variable names
-names = ['U','V','W','P']
-
-# Process initial condition type
-if (configName=='restart'):
-    if (dataFileType=='restart'):
-        # Read state information from an NGA restart file
-        names,startTime = dr.readNGArestart(dataFileStr)
-
-    elif (dataFileType=='volume'):
-        # Read grid and state data from a volume-format file
-        xGrid,yGrid,zGrid,names,dataTime,data = dr.readNGA(dataFileStr)
-        configNx = len(xGrid)
-        configNy = len(yGrid)
-        configNz = len(zGrid)
-
-        # Interpolate grid and state data to cell faces
-        raise Exception('\nPyFlow: Volume file interpolation not implemented\n')
-        # Need periodicity information
-
-    # Read restart data later
-    data_IC = np.zeros((nx_,ny_,nz_,4),dtype=dtypeNumpy)
-    
-elif (configName=='periodicGaussian'):
-    # Initialize the uniform grid
-    xGrid = np.linspace(-0.5*configLx,0.5*configLx,configNx+1)
-    yGrid = np.linspace(-0.5*configLy,0.5*configLy,configNy+1)
-    zGrid = np.linspace(-0.5*configLz,0.5*configLz,configNz+1)
-    
-    # Initial condition
-    uMax = 2.0
-    vMax = 2.0
-    wMax = 2.0
-    stdDev = 0.1
-    gaussianBump = ( np.exp(-0.5*(xGrid[imin_loc:imax_loc+1,np.newaxis,np.newaxis]/stdDev)**2) *
-                     np.exp(-0.5*(yGrid[np.newaxis,jmin_loc:jmax_loc+1,np.newaxis]/stdDev)**2) *
-                     np.exp(-0.5*(zGrid[np.newaxis,np.newaxis,kmin_loc:kmax_loc+1]/stdDev)**2) )
-    data_IC = np.zeros((nx_,ny_,nz_,4),dtype=dtypeNumpy)
-    data_IC[:,:,:,0] = uMax * gaussianBump
-    data_IC[:,:,:,1] = vMax * gaussianBump
-    data_IC[:,:,:,2] = wMax * gaussianBump
-    data_IC[:,:,:,3] = 0.0
-    del gaussianBump
-
-elif (configName=='uniform'):
-    # Uniform flow
-    # Initialize the uniform grid
-    xGrid = np.linspace(-0.5*configLx,0.5*configLx,configNx+1)
-    yGrid = np.linspace(-0.5*configLy,0.5*configLy,configNy+1)
-    zGrid = np.linspace(-0.5*configLz,0.5*configLz,configNz+1)
-    
-    uMax = 2.0
-    vMax = 2.0
-    wMax = 2.0
-    data_IC = np.zeros((nx_,ny_,nz_,4),dtype=dtypeNumpy)
-    data_IC[:,:,:,0] = uMax
-    data_IC[:,:,:,1] = vMax
-    data_IC[:,:,:,2] = wMax
-    data_IC[:,:,:,3] = 0.0
-
-elif (configName=='notAchannel'):
-    # Not a channel; periodic BCs at +/- y; no walls
-    # Initialize the uniform grid
-    xGrid = np.linspace(-0.5*configLx,0.5*configLx,configNx+1)
-    yGrid = np.linspace(-0.5*configLy,0.5*configLy,configNy+1)
-    zGrid = np.linspace(-0.5*configLz,0.5*configLz,configNz+1)
-    
-    uMax = 2.0
-    vMax = 0.0
-    wMax = 0.0
-    amp  = 0.4
-    if (decomp.rank==0):
-        print("Bulk Re={:7f}".format(rho*uMax*configLy/mu))
-    parabolaX = ( 6.0*(yGrid[np.newaxis,jmin_loc:jmax_loc+1,np.newaxis] + 0.5*configLy)
-                  *(0.5*configLy - yGrid[np.newaxis,jmin_loc:jmax_loc+1,np.newaxis])
-                  /configLy**2 )
-    Unorm = np.sqrt(uMax**2 + wMax**2)
-    data_IC = np.zeros((nx_,ny_,nz_,4),dtype=dtypeNumpy)
-    data_IC[:,:,:,0] = (uMax * parabolaX
-                        + amp*Unorm*np.cos(16.0*3.1415926*xGrid[imin_loc:imax_loc+1,np.newaxis,np.newaxis]/configLx))
-    data_IC[:,:,:,1] = 0.0
-    data_IC[:,:,:,2] = (wMax * parabolaX
-                        + amp*Unorm*np.cos(16.0*3.1415926*zGrid[np.newaxis,np.newaxis,kmin_loc:kmax_loc+1]/configLz))
-    data_IC[:,:,:,3] = 0.0
-    del parabolaX
-
+names,startTime,data_IC,xGrid,yGrid,zGrid = \
+    initial_conditions.generate(inputConfig,config,decomp)
 
     
 # ----------------------------------------------------
@@ -383,29 +289,35 @@ data_all_CPU   = state.data_all_CPU(decomp,startTime,simDt,
                                     names[0:4],state_data_all)
 
 # Allocate a temporary velocity state for RK solvers
-if (advancerName[:-1]=="RK"):
+if (inputConfig.advancerName[:-1]=="RK"):
     state_uTmp_P = state.state_P(decomp,IC_u_np)
     state_vTmp_P = state.state_P(decomp,IC_v_np)
     state_wTmp_P = state.state_P(decomp,IC_w_np)
 
+# Density
+mu  = inputConfig.mu
+rho = inputConfig.rho
+
 # Allocate pressure source term and local viscosity
-source_P = torch.zeros(nx_,ny_,nz_,dtype=dtypeTorch).to(device)
-VISC_P   = torch.ones(nxo_,nyo_,nzo_,dtype=dtypeTorch).to(device)
+source_P = torch.zeros(nx_,ny_,nz_,dtype=inputConfig.dtypeTorch).to(decomp.device)
+VISC_P   = torch.ones(nxo_,nyo_,nzo_,dtype=inputConfig.dtypeTorch).to(decomp.device)
 VISC_P.mul_(mu)
 
 
 # ----------------------------------------------------
 # Configure adjoint training
 # ----------------------------------------------------
-if (adjointTraining):
+if (inputConfig.adjointTraining):
     # Check for a few prerequisites
-    if (SFSmodel!="ML"):
+    if (inputConfig.SFSmodel!="ML"):
         if (decomp.rank==0):
             raise Exception("\nAdjoint training requires ML subfilter model\n")
-    elif (equationMode!="NS"):
+    elif (inputConfig.equationMode!="NS"):
         if (decomp.rank==0):
             raise Exception("\nAdjoint training requires Navier-Stokes solver\n")
     else:
+        numCheckpointIt = inputConfig.numCheckpointIt
+        
         # Allocate the adjoint state
         state_u_adj_P = state.state_P(decomp,IC_zeros_np)
         state_v_adj_P = state.state_P(decomp,IC_zeros_np)
@@ -420,7 +332,7 @@ if (adjointTraining):
         adj_rhs1 = adjoint.rhs_adjPredictor(decomp)
 
         # Allocate temporary adjoint states and rhs objects for RK solvers
-        if (advancerName[:-1]=="RK"):
+        if (inputConfig.advancerName[:-1]=="RK"):
             state_uTmp_adj_P = state.state_P(decomp,IC_zeros_np)
             state_vTmp_adj_P = state.state_P(decomp,IC_zeros_np)
             state_wTmp_adj_P = state.state_P(decomp,IC_zeros_np)
@@ -431,11 +343,11 @@ if (adjointTraining):
         # Allocate space for checkpointed solutions
         #  --> Could be moved to adjoint module
         check_u_P = torch.zeros(nxo_,nyo_,nzo_,numCheckpointIt+1,
-                                dtype=dtypeTorch).to(device)
+                                dtype=inputConfig.dtypeTorch).to(decomp.device)
         check_v_P = torch.zeros(nxo_,nyo_,nzo_,numCheckpointIt+1,
-                                dtype=dtypeTorch).to(device)
+                                dtype=inputConfig.dtypeTorch).to(decomp.device)
         check_w_P = torch.zeros(nxo_,nyo_,nzo_,numCheckpointIt+1,
-                                dtype=dtypeTorch).to(device)
+                                dtype=inputConfig.dtypeTorch).to(decomp.device)
 
         # Set up to use target data
         useTargetData = True
@@ -445,15 +357,17 @@ if (adjointTraining):
 # ----------------------------------------------------
 # Configure SFS model
 # ----------------------------------------------------
-if (SFSmodel=='Smagorinsky'):
+if (inputConfig.SFSmodel=='Smagorinsky'):
     use_SFSmodel = True
-    sfsmodel = sfsmodel_smagorinsky.stress_constCs(geometry,metric,Cs,expFilterFac)
-elif (SFSmodel=='gradient'):
+    sfsmodel = sfsmodel_smagorinsky.stress_constCs(geometry,metric,inputConfig.Cs,
+                                                   inputConfig.expFilterFac)
+elif (inputConfig.SFSmodel=='gradient'):
     use_SFSmodel = True
     sfsmodel = sfsmodel_gradient.residual_stress(decomp,geometry,metric)
-elif (SFSmodel=='ML'):
+elif (inputConfig.SFSmodel=='ML'):
     use_SFSmodel = True
-    sfsmodel = sfsmodel_ML.residual_stress(decomp,geometry,metric,loadModel,modelDictName)
+    sfsmodel = sfsmodel_ML.residual_stress(decomp,geometry,metric,
+                                           inputConfig.loadModel,inputConfig.modelDictName)
 else:
     # Construct a blank SFSmodel object
     use_SFSmodel = False
@@ -467,39 +381,42 @@ if (sfsmodel.modelType=='eddyVisc'):
 # ----------------------------------------------------
 # Configure solver
 # ----------------------------------------------------
-if (equationMode=='scalar'):
+if (inputConfig.equationMode=='scalar'):
     # Scalar advection-diffusion equations
     if (decomp.rank==0):
         print("\nSolving scalar advection-diffusion equation")
 
-    # Allocate RHS objects
+    # Allocate RHS objects (uMax etc. deprecated)
     rhs1 = velocity.rhs_scalar(decomp,uMax,vMax,wMax)
     if (advancerName[:-1]=="RK"):
         rhs2 = velocity.rhs_scalar(decomp,uMax,vMax,wMax)
         rhs3 = velocity.rhs_scalar(decomp,uMax,vMax,wMax)
         rhs4 = velocity.rhs_scalar(decomp,uMax,vMax,wMax)
         
-elif (equationMode=='NS'):
+elif (inputConfig.equationMode=='NS'):
     # Navier-Stokes equations
     if (decomp.rank==0):
         print("\nSolving Navier-Stokes equations")
-        print("Solver settings: advancer={}, pressure={}".format(advancerName,pSolverMode))
+        print("Solver settings: advancer={}, pressure={}"
+              .format(inputConfig.advancerName,inputConfig.pSolverMode))
 
     # Allocate RHS objects    
     rhs1 = velocity.rhs_NavierStokes(decomp)
-    if (advancerName[:-1]=="RK"):
+    if (inputConfig.advancerName[:-1]=="RK"):
         rhs2 = velocity.rhs_NavierStokes(decomp)
         rhs3 = velocity.rhs_NavierStokes(decomp)
         rhs4 = velocity.rhs_NavierStokes(decomp)
         
     # Initialize pressure solver
-    if (pSolverMode=='Jacobi'):
+    if (inputConfig.pSolverMode=='Jacobi'):
         poisson = pressure.solver_jacobi(comms,decomp,metric,
-                                         geometry,rho,simDt,max_pressure_iterations)
-    elif (pSolverMode=='bicgstab'):
-        poisson = pressure.solver_bicgstab(comms,decomp,metric,geometry,rho,simDt,
-                                           min_pressure_residual,max_pressure_iterations)
-    if (pSolverMode=='RedBlackGS'):
+                                         geometry,inputConfig.rho,simDt,
+                                         inputConfig.max_pressure_iterations)
+    elif (inputConfig.pSolverMode=='bicgstab'):
+        poisson = pressure.solver_bicgstab(comms,decomp,metric,geometry,inputConfig.rho,simDt,
+                                           inputConfig.min_pressure_residual,
+                                           inputConfig.max_pressure_iterations)
+    if (inputConfig.pSolverMode=='RedBlackGS'):
         #poisson = pressure.solver_GS_redblack(geometry,rho,simDt,max_pressure_iterations)
         raise Exception('\nRed-black GS not yet implemented\n')
         
@@ -508,9 +425,9 @@ else:
         raise Exception("Equation setting not recognized; consequences unknown...")
 
 # Read restart state data in parallel
-if (configName=='restart'):
-    if (dataFileType=='restart'):
-        dr.readNGArestart_parallel(dataFileStr,data_all_CPU)
+if (inputConfig.configName=='restart'):
+    if (inputConfig.dataFileType=='restart'):
+        dr.readNGArestart_parallel(inputConfig.dataFileStr,data_all_CPU)
 
 
 
@@ -528,8 +445,8 @@ if (useTargetData):
 
     # Read the target data file
     #   Adjoint training reads target files in outer iteration loop
-    if (not adjointTraining):
-        targetDataFileStr = targetFileBaseStr + '{:08d}'.format(startFileIt)
+    if (not inputConfig.adjointTraining):
+        targetDataFileStr = targetFileBaseStr + '{:08d}'.format(inputConfig.startFileIt)
         dr.readNGArestart_parallel(targetDataFileStr,target_data_all_CPU)
 
     # JFM - for SFS model verification
@@ -545,8 +462,8 @@ if (useTargetData):
 #    # Clean up
 #    del data_t
 #    
-#    x_max_P  = torch.FloatTensor( const.x_max16 ).to(device)
-#    target_P = torch.FloatTensor( data_target10 ).to(device)
+#    x_max_P  = torch.FloatTensor( const.x_max16 ).to(decomp.device)
+#    target_P = torch.FloatTensor( data_target10 ).to(decomp.device)
 #        
 #    # Clean up
 #    del data_target10
@@ -577,7 +494,7 @@ del data_IC
 
 # Simulation time
 simTime  = startTime
-stopTime = startTime + numIt*simDt
+stopTime = startTime + inputConfig.numIt*simDt
 
 # Synchronize the overlap cells before stepping
 state_u_P.update_border()
@@ -589,12 +506,12 @@ state_p_P.update_border()
 timeStr = "{:12.7E}".format(simTime)
 # Root process writes the header
 if (decomp.rank==0):
-    dr.writeNGArestart(fNameOut+'_'+timeStr,data_all_CPU,True)
+    dr.writeNGArestart(inputConfig.fNameOut+'_'+timeStr,data_all_CPU,True)
 # All processes write data
-dr.writeNGArestart_parallel(fNameOut+'_'+timeStr,data_all_CPU)
+dr.writeNGArestart_parallel(inputConfig.fNameOut+'_'+timeStr,data_all_CPU)
 
 # Write the stdout header
-if (equationMode=='NS'):
+if (inputConfig.equationMode=='NS'):
     if (decomp.rank==0):
         headStr = "  {:10s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}"
         print(headStr.format("Step","Time","max CFL","max U","max V","max W","TKE","divergence","max res_P"))
@@ -608,7 +525,7 @@ initEnergy = comms.parallel_sum(np.sum( data_all_CPU.read(0)**2 +
                                         data_all_CPU.read(1)**2 +
                                         data_all_CPU.read(2)**2 ))
 #rmsVel = np.sqrt(initEnergy/decomp.N)
-if (equationMode=='NS'):
+if (inputConfig.equationMode=='NS'):
     # Compute the initial divergence
     metric.div_vel(state_u_P,state_v_P,state_w_P,source_P)
     maxDivg = comms.parallel_max(torch.max(torch.abs(source_P)).cpu().numpy())
@@ -626,7 +543,7 @@ if (decomp.rank==0):
     print(lineStr.format(0,simTime,maxCFL,maxU,maxV,maxW,TKE,maxDivg))
     
 # Plot the initial state
-if (plotState):
+if (inputConfig.plotState):
     timeStr = "{:12.7E}_{}".format(simTime,decomp.rank)
     # Plot the initial state
     decomp.plot_fig_root(dr,state_u_P.var,"state_U_"+str(0)+"_"+timeStr)
@@ -642,9 +559,9 @@ time1 = time.time()
 itCount = 0
 
 # Configure the main simulation loop
-if (adjointTraining):
+if (inputConfig.adjointTraining):
     # Adjoint training: divide outer loop into checkpointed inner loops
-    numStepsOuter = numIt//numCheckpointIt
+    numStepsOuter = inputConfig.numIt//numCheckpointIt
     numStepsInner = numCheckpointIt
 else:
     # Forward solver only
@@ -658,7 +575,7 @@ for itCountOuter in range(numStepsOuter):
     itCountInner = 0
 
     # Checkpoint the velocity initial condition
-    if (adjointTraining):
+    if (inputConfig.adjointTraining):
         check_u_P[:,:,:,itCountInner].copy_(state_u_P.var)
         check_v_P[:,:,:,itCountInner].copy_(state_v_P.var)
         check_w_P[:,:,:,itCountInner].copy_(state_w_P.var)
@@ -686,7 +603,7 @@ for itCountOuter in range(numStepsOuter):
             #    sfsmodel.update(state_u_P,state_v_P,state_w_P,metric)
                 
         # Compute velocity prediction
-        if (advancerName=="Euler"):
+        if (inputConfig.advancerName=="Euler"):
             # rhs
             rhs1.evaluate(state_u_P,state_v_P,state_w_P,VISC_P,rho,sfsmodel,metric)
 
@@ -695,7 +612,7 @@ for itCountOuter in range(numStepsOuter):
             state_v_P.var = state_v_P.var + rhs1.rhs_v*simDt
             state_w_P.var = state_w_P.var + rhs1.rhs_w*simDt
 
-        elif (advancerName=="RK4"):
+        elif (inputConfig.advancerName=="RK4"):
             
             # Stage 1
             rhs1.evaluate(state_u_P,state_v_P,state_w_P,VISC_P,rho,sfsmodel,metric)
@@ -742,7 +659,7 @@ for itCountOuter in range(numStepsOuter):
         #   conservation needs to be enforced in open systems before
         #   solving Poisson equation, e.g., by rescaling source_P.
 
-        if (equationMode=='NS'):
+        if (inputConfig.equationMode=='NS'):
             # Divergence of the predicted velocity field
             metric.div_vel(state_u_P,state_v_P,state_w_P,source_P)
             
@@ -769,7 +686,7 @@ for itCountOuter in range(numStepsOuter):
         # ----------------------------------------------------
         # Checkpoint the velocity solution
         # ----------------------------------------------------
-        if (adjointTraining):
+        if (inputConfig.adjointTraining):
             check_u_P[:,:,:,itCountInner+1].copy_(state_u_P.var)
             check_v_P[:,:,:,itCountInner+1].copy_(state_v_P.var)
             check_w_P[:,:,:,itCountInner+1].copy_(state_w_P.var)
@@ -796,13 +713,13 @@ for itCountOuter in range(numStepsOuter):
         #                                    data_all_CPU.read(1)**2 +
         #                                    data_all_CPU.read(2)**2 ))
         #rmsVel = np.sqrt(rmsVel/decomp.N)
-        if (equationMode=='NS'):
+        if (inputConfig.equationMode=='NS'):
             # Compute the final divergence
             metric.div_vel(state_u_P,state_v_P,state_w_P,source_P)
             maxDivg = comms.parallel_max(torch.max(torch.abs(source_P)).cpu().numpy())
         
         # Write stats
-        if (equationMode=='NS'):
+        if (inputConfig.equationMode=='NS'):
             if (decomp.rank==0):
                 lineStr = "  {:10d}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}    {:8.3E}"
                 print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW,TKE,maxDivg,max_resP))
@@ -812,24 +729,24 @@ for itCountOuter in range(numStepsOuter):
                 print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW))
 
         # Write output
-        if (np.mod(itCount,numItDataOut)==0):
+        if (np.mod(itCount,inputConfig.numItDataOut)==0):
             # Write data to disk
             data_all_CPU.time = simTime
             data_all_CPU.dt   = simDt
             timeStr = "{:12.7E}".format(simTime)
             if (decomp.rank==0):
-                dr.writeNGArestart(fNameOut+'_'+timeStr,data_all_CPU,True)
-            dr.writeNGArestart_parallel(fNameOut+'_'+timeStr,data_all_CPU)
+                dr.writeNGArestart(inputConfig.fNameOut+'_'+timeStr,data_all_CPU,True)
+            dr.writeNGArestart_parallel(inputConfig.fNameOut+'_'+timeStr,data_all_CPU)
 
-        if (plotState and np.mod(itCount,numItPlotOut)==0):
+        if (inputConfig.plotState and np.mod(itCount,inputConfig.numItPlotOut)==0):
             timeStr = "{:12.7E}_{}".format(simTime,decomp.rank)
             decomp.plot_fig_root(dr,state_u_P.var,"state_U_"+str(itCount)+"_"+timeStr)
 
 
         # Compare to target DNS data
-        if (useTargetData and np.mod(itCount,numItTargetComp)==0 and not adjointTraining):
+        if (useTargetData and np.mod(itCount,numItTargetComp)==0 and not inputConfig.adjointTraining):
             # Only on root processor for now
-            targetFileIt  = startFileIt+itCount
+            targetFileIt  = inputConfig.startFileIt+itCount
             targetFileStr = targetFileBaseStr + str(targetFileIt)
 
             # Check to make sure we read at the right time
@@ -866,12 +783,12 @@ for itCountOuter in range(numStepsOuter):
     # ----------------------------------------------------
     # Adjoint inner loop
     # ----------------------------------------------------
-    if (adjointTraining):
+    if (inputConfig.adjointTraining):
         itCountInner = numStepsInner
         itCountInnerUp = 0
 
         # Load target state
-        targetDataFileStr = dataFileBStr + '{:08d}'.format(startFileIt+itCount)
+        targetDataFileStr = inputConfig.dataFileBStr + '{:08d}'.format(inputConfig.startFileIt+itCount)
         dr.readNGArestart_parallel(targetDataFileStr,target_data_all_CPU)
 
         # Set the adjoint initial condition to the mean absolute error
@@ -925,7 +842,7 @@ for itCountOuter in range(numStepsOuter):
             # ----------------------------------------------------
             # Adjoint predictor step: \hat{u}^t
             # ----------------------------------------------------
-            if (advancerName=="Euler"):
+            if (inputConfig.advancerName=="Euler"):
                 
                 # Adjoint equation rhs
                 adj_rhs1.evaluate(state_u_adj_P,state_v_adj_P,state_w_adj_P,
@@ -936,7 +853,7 @@ for itCountOuter in range(numStepsOuter):
                 state_v_adj_P.update( state_v_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1] + simDt*adj_rhs1.rhs_v )
                 state_w_adj_P.update( state_w_adj_P.var[imin_:imax_+1,jmin_:jmax_+1,kmin_:kmax_+1] + simDt*adj_rhs1.rhs_w )
 
-            elif (advancerName=="RK4"):
+            elif (inputConfig.advancerName=="RK4"):
                 
                 # Stage 1
                 adj_rhs1.evaluate(state_u_adj_P,state_v_adj_P,state_w_adj_P,
@@ -1035,8 +952,8 @@ data_all_CPU.time = simTime
 data_all_CPU.dt   = simDt
 timeStr = "{:12.7E}".format(simTime)
 if (decomp.rank==0):
-    dr.writeNGArestart(fNameOut+'_'+timeStr,data_all_CPU,True)
-dr.writeNGArestart_parallel(fNameOut+'_'+timeStr,data_all_CPU)
+    dr.writeNGArestart(inputConfig.fNameOut+'_'+timeStr,data_all_CPU,True)
+dr.writeNGArestart_parallel(inputConfig.fNameOut+'_'+timeStr,data_all_CPU)
             
 #Diff = state_u_P.var - Variable( torch.FloatTensor( np.matrix( u_DNS_downsamples[T_factor*(i+1)]).T ) )
 if (useTargetData):
@@ -1066,10 +983,16 @@ else:
         print("Energy initial={:10.5E}, final={:10.5E}, ratio={:10.5E}".format(initEnergy,finalEnergy,
                                                                                finalEnergy/initEnergy))
 
-if (plotState):
+if (inputConfig.plotState):
     # Print a pretty picture
     timeStr = "{:12.7E}_{}".format(simTime,decomp.rank)
     decomp.plot_fig_root(dr,state_u_P.var,"state_U_"+str(itCount)+"_"+timeStr)
 
 
     
+
+## END main
+    
+
+#if __name__ == "__main__":
+#    main(sys.argv[1:])
