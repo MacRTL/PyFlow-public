@@ -157,6 +157,10 @@ class Domain:
                     self.state_uTmp_adj_P = state.state_P(decomp,IC_zeros_np)
                     self.state_vTmp_adj_P = state.state_P(decomp,IC_zeros_np)
                     self.state_wTmp_adj_P = state.state_P(decomp,IC_zeros_np)
+                else:
+                    self.state_uTmp_adj_P = None
+                    self.state_vTmp_adj_P = None
+                    self.state_wTmp_adj_P = None
                     
                 # Allocate space for checkpointed solutions
                 #  --> Could be moved to adjoint module
@@ -194,14 +198,12 @@ class Domain:
                 
         # ----------------------------------------------------
         # Initialize SFS model
+        self.use_SFSmodel = True
         if (inputConfig.SFSmodel=='Smagorinsky'):
-            self.use_SFSmodel = True
             self.sfsmodel = sfsmodel_smagorinsky.stress_constCs(inputConfig,geometry)
         elif (inputConfig.SFSmodel=='gradient'):
-            self.use_SFSmodel = True
             self.sfsmodel = sfsmodel_gradient.residual_stress(decomp,geometry,metric)
         elif (inputConfig.SFSmodel=='ML'):
-            self.use_SFSmodel = True
             self.sfsmodel = sfsmodel_ML.residual_stress(inputConfig,decomp,geometry)
         else:
             # Construct a blank SFSmodel object
@@ -250,7 +252,8 @@ class Domain:
                                                     self.adjointRHS)
         # Poisson solver
         if (inputConfig.equationMode=='NS'):
-
+            self.max_resP = 0.0
+            
             if (inputConfig.pSolverMode=='Jacobi'):
                 self.poisson = pressure.solver_jacobi(comms,decomp,metric,
                                                       geometry,inputConfig.rho,simDt,
@@ -341,29 +344,28 @@ class Domain:
     # ----------------------------------------------------
     def adjointStep(self,simDt):
 
-        # ----------------------------------------------------
-        # Adjoint 'pressure' iteration
-        #
-        # Divergence of the adjoint velocity field
-        self.metric.div_vel(self.state_u_adj_P,self.state_v_adj_P,
-                            self.state_w_adj_P,self.source_P)
-
-        # Solve the Poisson equation
-        self.max_resP = self.poisson.solve(self.state_DP_P,self.state_p_P,
-                                           self.source_P)
-        
-        
-        # ----------------------------------------------------
-        # Adjoint corrector step: \hat{u}^*
-        #
-        # Compute 'pressure' gradients
-        self.metric.grad_P(self.state_DP_P)
-
-        # Update the adjoint solution
-        #   Note negative sign
-        self.state_u_adj_P.vel_corr(self.state_DP_P.grad_x, -simDt/self.rho)
-        self.state_v_adj_P.vel_corr(self.state_DP_P.grad_y, -simDt/self.rho)
-        self.state_w_adj_P.vel_corr(self.state_DP_P.grad_z, -simDt/self.rho)
+        if (True):
+            # ----------------------------------------------------
+            # Adjoint 'pressure' iteration
+            #
+            # Divergence of the adjoint velocity field
+            self.metric.div_vel(self.state_u_adj_P,self.state_v_adj_P,
+                                self.state_w_adj_P,self.source_P)
+            
+            # Solve the Poisson equation
+            self.max_resP = self.poisson.solve(self.state_DP_P,self.state_p_P,
+                                               self.source_P)
+            
+            # ----------------------------------------------------
+            # Adjoint corrector step: \hat{u}^*
+            #
+            # Compute 'pressure' gradients
+            self.metric.grad_P(self.state_DP_P)
+            
+            # Update the adjoint solution
+            self.state_u_adj_P.vel_corr(self.state_DP_P.grad_x, +simDt/self.rho)
+            self.state_v_adj_P.vel_corr(self.state_DP_P.grad_y, +simDt/self.rho)
+            self.state_w_adj_P.vel_corr(self.state_DP_P.grad_z, +simDt/self.rho)
 
         
         # ----------------------------------------------------
