@@ -34,12 +34,6 @@ import torch
 import sys
 from torch.autograd import Variable
 
-# Load PyFlow modules
-#
-sys.path.append("../data")
-import state
-#
-import pressure
 
 # ----------------------------------------------------
 # Adjoint RHS class
@@ -120,9 +114,7 @@ class rhs_adjPredictor:
         self.metric.div_vel_over(state_u_adj,state_v_adj,state_w_adj,self.div_vel)
         self.div_vel.div_( 3.0 )
 
-        # Viscous fluxes -- DOUBLE CHECK NON-LAPLACIAN FORM
-        #print(self.FX.device)
-        #print(state_u_adj.grad_x.device)
+        # Viscous fluxes
         # xx
         self.FX.copy_( state_u_adj.grad_x )
         self.FX.sub_ ( self.div_vel )
@@ -175,7 +167,92 @@ class rhs_adjPredictor:
         self.metric.div_visc(self.FX,self.FY,self.FZ,self.rhs_w)
 
         
+        # Advective fluxes -- NON-CONSERVATIVE -- from CONSERVATIVE
+        # form of NS equations
+        #
+        # Compute gradients of the adjoint velocity field
+        self.metric.grad_vel_adj_cons(state_u_adj,'u')
+        self.metric.grad_vel_adj_cons(state_v_adj,'v')
+        self.metric.grad_vel_adj_cons(state_w_adj,'w')
+        
+        # -2*grad1T(adj(u))*u
+        self.FX.copy_( state_u_adj.grad_x )
+        self.FX.mul_ ( self.state_u.var )
+        self.FX.mul_ ( 2.0 )
+
+        # -grad2T(adj(u))*v
+        self.metric.interp_v_ym  ( self.state_v )
+        self.metric.interp_uvwi_x( self.state_v )
+        self.FY.copy_( state_u_adj.grad_y )
+        self.FY.mul_ ( self.state_v.var_i )
+        
+        # -grad3T(adj(u))*w
+        self.metric.interp_w_zm  ( self.state_w )
+        self.metric.interp_uvwi_x( self.state_w )
+        self.FZ.copy_( state_u_adj.grad_z )
+        self.FZ.mul_ ( self.state_w.var_i )
+
+        # Accumulate to adj(u) RHS, note negative signs from above
+        self.rhs_u.add_( self.FX[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+        self.rhs_u.add_( self.FY[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+        self.rhs_u.add_( self.FZ[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+
+
+        # -grad1T(adj(v))*u
+        self.metric.interp_u_xm  ( self.state_u )
+        self.metric.interp_uvwi_y( self.state_u )
+        self.FX.copy_( state_v_adj.grad_x )
+        self.FX.mul_ ( self.state_u.var_i )
+
+        # -2*grad2T(adj(v))*v
+        self.FY.copy_( state_v_adj.grad_y )
+        self.FY.mul_ ( self.state_v.var )
+        self.FY.mul_ ( 2.0 )
+
+        # -grad3T(adj(v))*w
+        self.metric.interp_w_zm  ( self.state_w )
+        self.metric.interp_uvwi_y( self.state_w )
+        self.FZ.copy_( state_v_adj.grad_z )
+        self.FZ.mul_ ( self.state_w.var_i )
+
+        # Accumulate to adj(v) RHS, note negative signs from above
+        self.rhs_v.add_( self.FX[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+        self.rhs_v.add_( self.FY[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+        self.rhs_v.add_( self.FZ[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+
+
+        # -grad1T(adj(w))*u
+        self.metric.interp_u_xm  ( self.state_u )
+        self.metric.interp_uvwi_z( self.state_u )
+        self.FX.copy_( state_w_adj.grad_x )
+        self.FX.mul_ ( self.state_u.var_i )
+
+        # -grad2T(adj(w))*v
+        self.metric.interp_v_ym  ( self.state_v )
+        self.metric.interp_uvwi_z( self.state_v )
+        self.FY.copy_( state_w_adj.grad_y )
+        self.FY.mul_ ( self.state_v.var_i )
+
+        # -2*grad3T(adj(w))*w
+        self.FZ.copy_( state_w_adj.grad_z )
+        self.FZ.mul_ ( self.state_w.var )
+        self.FZ.mul_ ( 2.0 )
+
+        # Accumulate to adj(w) RHS, note negative signs from above
+        self.rhs_w.add_( self.FX[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+        self.rhs_w.add_( self.FY[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+        self.rhs_w.add_( self.FZ[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+        
+        
+        #print("Done adj visc")
+        #return
+
+    def dont_use(self):
+        print("oops")
+
+        
         # Cross-advective fluxes -- divergence form
+        #   ---> from NON-CONSERVATIVE form of NS equations; not appropriate??
         # -adj(u)*u
         self.metric.interp_u_xm(state_u_adj)
         self.metric.interp_u_xm(self.state_u)
@@ -215,12 +292,6 @@ class rhs_adjPredictor:
         self.metric.interp_w_zm(self.state_w)
         self.metric.vel_conv_zz(state_w_adj,self.state_w,self.rhs_w,sign=-1.0)
 
-        #print("Done adj visc")
-        #return
-
-    #def dont_use(self):
-        #print("oops")
-
 
         # Cross-advective fluxes
         #   [JFM] Do these terms have physical meaning?
@@ -238,6 +309,7 @@ class rhs_adjPredictor:
         # Interpolate v-adj to x-face
         self.metric.interp_v_ym  (state_v_adj)
         self.metric.interp_uvwi_x(state_v_adj)
+        #state_v_adj.update_border_i()
         self.div_vel.copy_( self.state_v.grad_x )
         self.FY.copy_     ( self.state_v.grad_x )
         self.FY[:,:-1,:].add_( self.div_vel[:,1:,:] )
@@ -247,6 +319,7 @@ class rhs_adjPredictor:
         # -adj(w)*grad1(w) - compute at xz-edge, interpolate to x-face
         self.metric.interp_w_zm  (state_w_adj)
         self.metric.interp_uvwi_x(state_w_adj)
+        #state_w_adj.update_border_i()
         self.div_vel.copy_( self.state_w.grad_x )
         self.FZ.copy_     ( self.state_w.grad_x )
         self.FZ[:,:,:-1].add_( self.div_vel[:,:,1:] )
@@ -258,10 +331,12 @@ class rhs_adjPredictor:
         self.rhs_u.sub_( self.FY[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
         self.rhs_u.sub_( self.FZ[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
 
+        
         # adj(v) equation
         # -adj(u)*grad2(u)
         self.metric.interp_u_xm  (state_u_adj)
         self.metric.interp_uvwi_y(state_u_adj)
+        #state_u_adj.update_border_i()
         self.div_vel.copy_( self.state_u.grad_y )
         self.FX.copy_     ( self.state_u.grad_y )
         self.FX[:-1,:,:].add_( self.div_vel[1:,:,:] )
@@ -275,6 +350,7 @@ class rhs_adjPredictor:
         # -adj(w)*grad2(w)
         self.metric.interp_w_zm  (state_w_adj)
         self.metric.interp_uvwi_y(state_w_adj)
+        #state_w_adj.update_border_i()
         self.div_vel.copy_( self.state_w.grad_y )
         self.FZ.copy_     ( self.state_w.grad_y )
         self.FZ[:,:,:-1].add_( self.div_vel[:,:,1:] )
@@ -286,10 +362,12 @@ class rhs_adjPredictor:
         self.rhs_v.sub_( self.FY[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
         self.rhs_v.sub_( self.FZ[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
 
+        
         # adj(w) equation
         # -adj(u)*grad3(u)
         self.metric.interp_u_xm  (state_u_adj)
         self.metric.interp_uvwi_z(state_u_adj)
+        #state_u_adj.update_border_i()
         self.div_vel.copy_( self.state_u.grad_z )
         self.FX.copy_     ( self.state_u.grad_z )
         self.FX[:-1,:,:].add_( self.div_vel[1:,:,:] )
@@ -299,6 +377,7 @@ class rhs_adjPredictor:
         # -adj(v)*grad3(v)
         self.metric.interp_v_ym  (state_v_adj)
         self.metric.interp_uvwi_z(state_v_adj)
+        #state_v_adj.update_border_i()
         self.div_vel.copy_( self.state_v.grad_z )
         self.FY.copy_     ( self.state_v.grad_z )
         self.FY[:,:-1,:].add_( self.div_vel[:,1:,:] )
@@ -313,6 +392,9 @@ class rhs_adjPredictor:
         self.rhs_w.sub_( self.FX[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
         self.rhs_w.sub_( self.FY[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
         self.rhs_w.sub_( self.FZ[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+        
+        
+        
 
         # Closure model terms -- delta^t
 
