@@ -256,7 +256,8 @@ class Domain:
                                                       geometry,inputConfig.rho,simDt,
                                                       inputConfig.max_pressure_iterations)
             elif (inputConfig.pSolverMode=='bicgstab'):
-                self.poisson = pressure.solver_bicgstab(comms,decomp,metric,geometry,inputConfig.rho,simDt,
+                self.poisson = pressure.solver_bicgstab(comms,decomp,metric,geometry,
+                                                        inputConfig.rho,simDt,
                                                         inputConfig.min_pressure_residual,
                                                         inputConfig.max_pressure_iterations)
             elif (inputConfig.pSolverMode=='RedBlackGS'):
@@ -285,11 +286,13 @@ class Domain:
         #
         if (self.use_SFSmodel):
             if (self.sfsmodel.modelType=='eddyVisc'):
-                muEddy = self.sfsmodel.eddyVisc(self.state_u_P,self.state_v_P,self.state_w_P,
+                muEddy = self.sfsmodel.eddyVisc(self.state_u_P,self.state_v_P,
+                                                self.state_w_P,
                                                 self.rho,self.metric)
                 self.VISC_P.copy_( self.muMolec + muEddy )
             elif (self.sfsmodel.modelType=='tensor'):
-                self.sfsmodel.update(self.state_u_P,self.state_v_P,self.state_w_P,self.metric)
+                self.sfsmodel.update(self.state_u_P,self.state_v_P,
+                                     self.state_w_P,self.metric)
             # --> Source-type models: evaluate inside the RHS
             
         # ----------------------------------------------------
@@ -320,7 +323,8 @@ class Domain:
             #int_RP = comms.parallel_sum(torch.sum(source_P).cpu().numpy())
 
             # Solve the Poisson equation
-            self.max_resP = self.poisson.solve(self.state_DP_P,self.state_p_P,self.source_P)
+            self.max_resP = self.poisson.solve(self.state_DP_P,self.state_p_P,
+                                               self.source_P)
 
             # Compute pressure gradients
             self.metric.grad_P(self.state_DP_P)
@@ -341,10 +345,12 @@ class Domain:
         # Adjoint 'pressure' iteration
         #
         # Divergence of the adjoint velocity field
-        self.metric.div_vel(self.state_u_adj_P,self.state_v_adj_P,self.state_w_adj_P,self.source_P)
+        self.metric.div_vel(self.state_u_adj_P,self.state_v_adj_P,
+                            self.state_w_adj_P,self.source_P)
 
         # Solve the Poisson equation
-        self.max_resP = self.poisson.solve(self.state_DP_P,self.state_p_P,self.source_P)
+        self.max_resP = self.poisson.solve(self.state_DP_P,self.state_p_P,
+                                           self.source_P)
         
         
         # ----------------------------------------------------

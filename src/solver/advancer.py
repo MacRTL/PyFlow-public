@@ -52,9 +52,9 @@ class Euler:
         self.rhsClass.rhs1.evaluate(self.state_u,self.state_v,self.state_w)
 
         # Update the state
-        self.state_u.update( self.state_u.interior + self.rhsClass.rhs1.rhs_u*simDt )
-        self.state_v.update( self.state_v.interior + self.rhsClass.rhs1.rhs_v*simDt )
-        self.state_w.update( self.state_w.interior + self.rhsClass.rhs1.rhs_w*simDt )
+        self.state_u.update( self.state_u.interior() + self.rhsClass.rhs1.rhs_u*simDt )
+        self.state_v.update( self.state_v.interior() + self.rhsClass.rhs1.rhs_v*simDt )
+        self.state_w.update( self.state_w.interior() + self.rhsClass.rhs1.rhs_w*simDt )
 
 
 # ----------------------------------------------------
