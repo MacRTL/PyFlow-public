@@ -44,7 +44,6 @@ import resource
 
 # Load PyFlow modules
 sys.path.append("../data")
-import state
 import domain
 import dataReader as dr
 import constants as const
@@ -112,14 +111,31 @@ def run(inputConfig):
     # JFM - for SFS model verification
     #dr.readNGArestart_parallel(dataFileStr,target_data_all_CPU)
     #print(target_data_all_CPU.read(0)[0,0,0])
-
     
     # Clean up
     del data_IC
 
 
     # ----------------------------------------------------
-    # Pre-simulation monitoring tasks 
+    # Adjoint verification
+    # ----------------------------------------------------
+    adjointVerification = False
+    try:
+        adjointVerification = inputConfig.adjointVerification
+        if (adjointVerification):
+            print("Performing adjoint verification, perturbation={}"
+                  .format(inputConfig.perturbation))
+            # Perturb the initial condition
+            nn = geometry.imin_ + geometry.nx_//2
+            D.state_u_P.var[nn,nn,nn] += inputConfig.perturbation
+        else:
+            print("Not performing adjoint verification")
+    except:
+        print("Adjoint verification settings not specified")
+
+        
+    # ----------------------------------------------------
+    # Pre-simulation monitoring tasks
     # ----------------------------------------------------
     
     # Simulation time
@@ -145,7 +161,8 @@ def run(inputConfig):
     if (inputConfig.equationMode=='NS'):
         if (decomp.rank==0):
             headStr = "  {:10s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}"
-            print(headStr.format("Step","Time","max CFL","max U","max V","max W","TKE","divergence","max res_P"))
+            print(headStr.format("Step","Time","max CFL","max U","max V","max W","TKE",
+                                 "divergence","max res_P"))
     else:
         if (decomp.rank==0):
             headStr = "  {:10s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}"
@@ -219,13 +236,13 @@ def run(inputConfig):
 
             # ----------------------------------------------------
             # Evaluate the forward step
-            # ----------------------------------------------------
+            #
             D.forwardStep(simDt)
 
         
             # ----------------------------------------------------
             # Checkpoint the velocity solution
-            # ----------------------------------------------------
+            #
             if (inputConfig.adjointTraining):
                 D.check_u_P[:,:,:,itCountInner+1].copy_(D.state_u_P.var)
                 D.check_v_P[:,:,:,itCountInner+1].copy_(D.state_v_P.var)
@@ -234,7 +251,7 @@ def run(inputConfig):
                 
             # ----------------------------------------------------
             # Post-step tasks
-            # ----------------------------------------------------
+            #
             # Update the counters
             itCountInner += 1
             itCount += 1
@@ -313,38 +330,50 @@ def run(inputConfig):
                     print("     L1 error  : {:10.5E}".format(L1_error))
                     
         ## END OF FORWARD INNER LOOP
+
+
+        # Adjoint verification: print the objective function
+        if (adjointVerification):
+            new_obj = torch.mean( (D.state_u_P.interior() - 0.0)**2 ).numpy() 
+            print("Objective function: {}".format(new_obj))
         
         
         # ----------------------------------------------------
         # Adjoint inner loop
         # ----------------------------------------------------
         if (inputConfig.adjointTraining):
-            itCountInner = numStepsInner
             itCountInnerUp = 0
             
             # Load target state
-            targetDataFileStr = inputConfig.dataFileBStr + '{:08d}'.format(inputConfig.startFileIt+itCount)
-            dr.readNGArestart_parallel(targetDataFileStr,D.target_data_all_CPU)
+            if (adjointVerification):
+                D.state_u_adj_P.var.copy_( 2.0*(D.state_u_P.var - 0.0) )
+                D.state_v_adj_P.var.copy_( 0.0*(D.state_v_P.var - 0.0) )
+                D.state_w_adj_P.var.copy_( 0.0*(D.state_w_P.var - 0.0) )
+
+            else:
+                targetDataFileStr = inputConfig.dataFileBStr + \
+                    '{:08d}'.format(inputConfig.startFileIt+itCount)
+                dr.readNGArestart_parallel(targetDataFileStr,D.target_data_all_CPU)
             
-            # Set the adjoint initial condition to the mean absolute error
-            D.state_u_adj_P.var.copy_( torch.sign(D.state_u_P.var - D.state_u_T.var) )
-            D.state_v_adj_P.var.copy_( torch.sign(D.state_v_P.var - D.state_v_T.var) )
-            D.state_w_adj_P.var.copy_( torch.sign(D.state_w_P.var - D.state_w_T.var) )
-            #D.state_u_adj_P.var.zero_()
-            #D.state_v_adj_P.var.zero_()
-            #D.state_w_adj_P.var.zero_()
+                # Set the adjoint initial condition to the mean absolute error
+                D.state_u_adj_P.var.copy_( torch.sign(D.state_u_P.var - D.state_u_T.var) )
+                D.state_v_adj_P.var.copy_( torch.sign(D.state_v_P.var - D.state_v_T.var) )
+                D.state_w_adj_P.var.copy_( torch.sign(D.state_w_P.var - D.state_w_T.var) )
+                
             # Normalize
-            D.state_u_adj_P.var.div_ ( decomp.nx*decomp.ny*decomp.nz )
-            D.state_v_adj_P.var.div_ ( decomp.nx*decomp.ny*decomp.nz )
-            D.state_w_adj_P.var.div_ ( decomp.nx*decomp.ny*decomp.nz )
+            D.state_u_adj_P.var.div_( decomp.nx*decomp.ny*decomp.nz )
+            D.state_v_adj_P.var.div_( decomp.nx*decomp.ny*decomp.nz )
+            D.state_w_adj_P.var.div_( decomp.nx*decomp.ny*decomp.nz )
             
             if (decomp.rank==0):
                 print('Starting adjoint iteration')
                 
             while (itCountInner > 0):
-                
+
+                # ----------------------------------------------------
                 # Load the checkpointed velocity solution at time 't'
-                #   Overlap cells are already synced in the checkpointed solutions
+                #   Overlap cells are already synced in the
+                #   checkpointed solutions
                 # --> JFM: check correct time is loaded??
                 D.state_u_P.var.copy_( D.check_u_P[:,:,:,itCountInner] )
                 D.state_v_P.var.copy_( D.check_v_P[:,:,:,itCountInner] )
@@ -353,13 +382,13 @@ def run(inputConfig):
                 
                 # ----------------------------------------------------
                 # Evaluate the adjoint step
-                # ----------------------------------------------------
+                #
                 D.adjointStep(simDt)
                 
                 
                 # ----------------------------------------------------
                 # Post-step tasks
-                # ----------------------------------------------------
+                #
                 # Update the counters
                 itCountInner -= 1
                 itCountInnerUp += 1
@@ -378,21 +407,24 @@ def run(inputConfig):
                                          ' ',' ',D.max_resP))
             
             ## END OF ADJOINT INNER LOOP
+            
+            if (adjointVerification):
+                new_adj = D.state_u_adj_P.var[nn,nn,nn].numpy()
+                print("Final adjoint state: {}".format(new_adj))
 
             # Finalize the ML model and sync across processors
-            #  DISABLED FOR TESTING
-            #D.sfsmodel.finalize(comms)
+            if (not adjointVerification):
+                D.sfsmodel.finalize(comms)
             
             # Write the ML model to disk
-            #  DISABLED FOR TESTING
-            #if (decomp.rank==0):
-            #    D.sfsmodel.save()
+            if (decomp.rank==0 and not adjointVerification):
+                D.sfsmodel.save()
             
             # Resource utilization
             if (decomp.rank==0):
                 mem_usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
                 mem_usage /= 1e9
-                print('Done adjoint iteration, peak mem={:7.5f} GB'.format(itCountInner,mem_usage))
+                print('Done adjoint iteration, peak mem={:7.5f} GB'.format(mem_usage))
                 
             # Reload last checkpointed velocity solution
             D.state_u_P.var.copy_( D.check_u_P[:,:,:,numStepsInner] )
@@ -453,8 +485,10 @@ def run(inputConfig):
 
         
     # Return data as required
-    if (inputConfig.adjointVerification):
-        return 1.0 # new_obj
+    if (adjointVerification):
+        return new_obj,new_adj
+    else:
+        return None,None
 
     
 ## END run

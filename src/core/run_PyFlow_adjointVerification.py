@@ -1,9 +1,44 @@
+# ------------------------------------------------------------------------
+#
+# PyFlow: A GPU-accelerated CFD platform written in Python
+#
+# @file run_PyFlow_adjointVerification.py
+#
+# The MIT License (MIT)
+# Copyright (c) 2019 University of Illinois Board of Trustees
+#
+# Permission is hereby granted, free of charge, to any person 
+# obtaining a copy of this software and associated documentation 
+# files (the "Software"), to deal in the Software without 
+# restriction, including without limitation the rights to use, 
+# copy, modify, merge, publish, distribute, sublicense, and/or 
+# sell copies of the Software, and to permit persons to whom the 
+# Software is furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be 
+# included in all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, 
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES 
+# OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND 
+# NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT 
+# HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, 
+# WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING 
+# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR 
+# OTHER DEALINGS IN THE SOFTWARE.
+# 
+# ------------------------------------------------------------------------
 
 import sys
+import os
 import numpy as np
 import torch
 
 import PyFlow
+
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 
 
 # ----------------------------------------------------
@@ -48,7 +83,8 @@ class inputConfigClass:
         self.configFileStr = self.inFileDir+'config_dnsbox_1024_Lx0.045_NR_Delta16_Down16_0000'
         self.dataFileBStr  = self.inFileDir+'dnsbox_1024_Lx0.045_NR_Delta16_Down16_'
         self.startFileIt   = 20
-        self.dataFileStr   = self.dataFileBStr + '{:08d}'.format(self.startFileIt)
+        #self.dataFileStr   = self.dataFileBStr + '{:08d}'.format(self.startFileIt)
+        self.dataFileStr   = 'restart_test_2.0200000E-04'
         self.dataFileType  = 'restart'
         
         # Data file to write
@@ -57,7 +93,7 @@ class inputConfigClass:
         self.numItDataOut = 20
 
         # Parallel decomposition
-        self.nproc_x = 2
+        self.nproc_x = 1
         self.nproc_y = 1
         self.nproc_z = 1
 
@@ -67,7 +103,7 @@ class inputConfigClass:
 
         # Time step info
         self.simDt        = 1.0e-6
-        self.numIt        = 50
+        self.numIt        = 1
         self.startTime    = 0.0
         
         # SFS model settings
@@ -85,7 +121,7 @@ class inputConfigClass:
         # Adjoint training settings
         #   PyFlow will look for a target data file every numCheckpointIt
         self.adjointTraining = True
-        self.numCheckpointIt = 5
+        self.numCheckpointIt = 1
 
         # Solver settings
         #   advancerName options: Euler, RK4
@@ -97,8 +133,10 @@ class inputConfigClass:
         #
         # Pressure solver settings
         self.pSolverMode             = "bicgstab"
-        self.min_pressure_residual   = 1e-9
-        self.max_pressure_iterations = 150
+        #self.min_pressure_residual   = 1e-12
+        #self.max_pressure_iterations = 300
+        self.min_pressure_residual   = 1e-15
+        self.max_pressure_iterations = 1000
         #
         # Accuracy and precision settings
         self.genericOrder = 2
@@ -115,14 +153,92 @@ class inputConfigClass:
             self.targetFileBaseStr = dataFileBStr
             self.numItTargetComp = 50
 
+        # Adjoint verification settings
+        self.adjointVerification = True
+        self.perturbation = 0.0
+
 
             
 def main(argv):
     # Generate the input configuration
     inputConfig = inputConfigClass()
+    maxIter = inputConfig.numIt
 
-    # Run PyFlow
-    PyFlow.run(inputConfig)
+    #testName = 'diff_noAdv_noPressure'
+    #testName = 'diff_adv_noPressure'
+    testName = 'diff_advCons_noPressure'
+    #testName = 'diff_advNoCross_noPressure'
+    #testName = 'diff_noAdv_pressure'
+    #testName = 'diff_adv_pressure'
+    #testName = 'diff_advCons_pressure'
+    #testName = 'diff_advNoCross_pressure'
+    perturbationList = [0.0, 5e-1, 1e-1, 5e-2, 1e-2, 5e-3, 1e-3, 5e-4]#, 1e-4, 5e-5, 1e-5, 5e-6, 1e-6]
+    
+    objList = np.empty(0,dtype=np.float64)
+    adjList = np.empty(0,dtype=np.float64)
 
+    for perturbation in perturbationList:
+        # Perturb the configuration
+        inputConfig.perturbation = perturbation
+        
+        # Run PyFlow
+        obj,adj = PyFlow.run(inputConfig)
+
+        # Save the results
+        objList = np.append(objList,obj)
+        adjList = np.append(adjList,adj)
+        
+
+    print(objList,adjList)
+    print('\n')
+
+    
+    # Compute error
+    deltaList = np.empty(0,dtype=np.float64)
+    errorList = np.empty(0,dtype=np.float64)
+    old_obj = objList[0]
+    ii = 0
+    for Delta in perturbationList[1:]:
+        ii += 1
+        new_obj = objList[ii]
+        num_adj = (new_obj - old_obj)/Delta
+        new_adj = adjList[ii]
+        error   = new_adj - num_adj
+        rel_err = abs(error/new_adj)
+        print("Delta={:5.7E}, adjoint={:5.7E}, num_adj={:5.7E}, error={:5.7E}, rel_err={:5.7E}"
+              .format(Delta,new_adj,num_adj,error,rel_err))
+
+        # Save for plots
+        deltaList = np.append(deltaList,Delta)
+        errorList = np.append(errorList,rel_err)
+
+        
+    # Plot the error convergence
+    fSize = 20
+    fig1,ax1 = plt.subplots(figsize=(5.5,4))
+
+    plt.xscale('log')
+    plt.yscale('log')
+    plt.xlabel('Delta (u_1 perturbation)')
+    plt.ylabel('abs( 1 - adj_FD / adj_PyFlow )')
+
+    cvg1 = ax1.plot(deltaList,errorList,marker='o')
+    cvg2 = ax1.plot(deltaList,deltaList*1e-1,color='k',linestyle='--')
+
+    ax1.legend(('Error','1:1'))
+    plt.title('Case: '+testName+', Iter='+str(maxIter))
+    plt.tight_layout()
+
+    folder = 'figures/'
+    if (not os.path.exists(folder)):
+        os.mkdir(folder)
+    fig1.savefig(folder+'errorCvg_Iter'+str(maxIter)+'_'+testName+'.pdf')
+    plt.show()
+    
+    
+                                                                  
+
+# END MAIN
+    
 if __name__ == "__main__":
     main(sys.argv[1:])
