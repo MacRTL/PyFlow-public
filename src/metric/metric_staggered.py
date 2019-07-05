@@ -272,18 +272,21 @@ class metric_uniform:
         if (comp=='u'):
             # grad_x at x-faces
             self.interp_u_xm(state)
+            state.update_border_i()
             state.grad_x[1:,:,:].copy_( state.var_i[1: ,:,:] )
             state.grad_x[1:,:,:].sub_ ( state.var_i[:-1,:,:] )
             state.grad_x[1:,:,:].mul_ ( self.grad_x )
         elif (comp=='v'):
             # grad_y at y-faces
             self.interp_v_ym(state)
+            state.update_border_i()
             state.grad_y[:,1:,:].copy_( state.var_i[:,1: ,:] )
             state.grad_y[:,1:,:].sub_ ( state.var_i[:,:-1,:] )
             state.grad_y[:,1:,:].mul_ ( self.grad_y )
         elif (comp=='w'):
             # grad_z at z-faces
             self.interp_w_zm(state)
+            state.update_border_i()
             state.grad_z[:,:,1:].copy_( state.var_i[:,:,1: ] )
             state.grad_z[:,:,1:].sub_ ( state.var_i[:,:,:-1] )
             state.grad_z[:,:,1:].mul_ ( self.grad_z )
@@ -304,6 +307,57 @@ class metric_uniform:
             state.grad_z[:,:,1:].copy_( state.var[:,:,1: ] )
             state.grad_z[:,:,1:].sub_ ( state.var[:,:,:-1] )
             state.grad_z[:,:,1:].mul_ ( self.grad_z )
+
+
+    # ------------------------------------------------------------
+    # Gradients of velocity at cell faces
+    #  --> For NON-CONSERVATIVE advective terms in adjoint update
+    def grad_vel_adj_cons(self,state,comp):
+        # Diagonal components
+        if (comp=='u'):
+            # all at x-faces
+            # dx
+            self.interp_u_xm(state)
+            #state.update_border_i()
+            state.grad_x[1:,:,:].copy_( state.var_i[1: ,:,:] )
+            state.grad_x[1:,:,:].sub_ ( state.var_i[:-1,:,:] )
+            state.grad_x[1:,:,:].mul_ ( self.grad_x )
+        elif (comp=='v'):
+            # all at y-faces
+            # dy
+            self.interp_v_ym(state)
+            #state.update_border_i()
+            state.grad_y[:,1:,:].copy_( state.var_i[:,1: ,:] )
+            state.grad_y[:,1:,:].sub_ ( state.var_i[:,:-1,:] )
+            state.grad_y[:,1:,:].mul_ ( self.grad_y )
+        elif (comp=='w'):
+            # all at z-faces
+            # dz
+            self.interp_w_zm(state)
+            #state.update_border_i()
+            state.grad_z[:,:,1:].copy_( state.var_i[:,:,1: ] )
+            state.grad_z[:,:,1:].sub_ ( state.var_i[:,:,:-1] )
+            state.grad_z[:,:,1:].mul_ ( self.grad_z )
+
+        # Off-diagonal components
+        if (comp=='v' or comp=='w'):
+            # dx
+            self.interp_vw_x(state)
+            state.grad_x[:-1,:,:].copy_( state.var_i[1: ,:,:] )
+            state.grad_x[:-1,:,:].sub_ ( state.var_i[:-1,:,:] )
+            state.grad_x[:-1,:,:].mul_ ( self.grad_x )
+        if (comp=='u' or comp=='w'):
+            # dy
+            self.interp_uw_y(state)
+            state.grad_y[:,:-1,:].copy_( state.var_i[:,1: ,:] )
+            state.grad_y[:,:-1,:].sub_ ( state.var_i[:,:-1,:] )
+            state.grad_y[:,:-1,:].mul_ ( self.grad_y )
+        if (comp=='u' or comp=='v'):
+            # dz
+            self.interp_uv_z(state)
+            state.grad_z[:,:,:-1].copy_( state.var_i[:,:,1: ] )
+            state.grad_z[:,:,:-1].sub_ ( state.var_i[:,:,:-1] )
+            state.grad_z[:,:,:-1].mul_ ( self.grad_z )
 
 
     # -------------------------------------------------------------
@@ -467,3 +521,77 @@ class metric_uniform:
                     state_w.var_i[imin_:imax_,jmin_:jmax_,kmin_  :kmax_  ] )*self.grad_z*sign
 
 
+
+
+# ---------------------------------------------------------
+# Staggered central-difference schemes for nonuniform grids
+# ---------------------------------------------------------
+class metric_nonuniform_xy:
+    def __init__(self,geo):
+
+        # Local data sizes and indices
+        nx_ = geo.nx_
+        ny_ = geo.ny_
+        nz_ = geo.nz_
+        self.imin_  = geo.imin_;  self.imax_ = geo.imax_
+        self.jmin_  = geo.jmin_;  self.jmax_ = geo.jmax_
+        self.kmin_  = geo.kmin_;  self.kmax_ = geo.kmax_
+        nxo_ = geo.nxo_
+        nyo_ = geo.nyo_
+        nzo_ = geo.nzo_
+        self.imino_ = geo.imino_; self.imaxo_= geo.imaxo_
+        self.jmino_ = geo.jmino_; self.jmaxo_= geo.jmaxo_
+        self.kmino_ = geo.kmino_; self.kmaxo_= geo.kmaxo_
+        
+        # Initialize the grid metrics
+        self.grid_geo = geo.type
+        if (self.grid_geo=='uniform'):
+            self.div_x  = 1.0*geo.dxi
+            self.div_y  = 1.0*geo.dyi
+            self.div_z  = 1.0*geo.dzi
+            self.grad_x  = 1.0*geo.dxi
+            self.grad_y  = 1.0*geo.dyi
+            self.grad_z  = 1.0*geo.dzi
+            self.grad_xm = 1.0*geo.dxi
+            self.grad_ym = 1.0*geo.dyi
+            self.grad_zm = 1.0*geo.dzi
+            self.interp_x  = 0.5
+            self.interp_y  = 0.5
+            self.interp_z  = 0.5
+            self.interp_xm = 0.5
+            self.interp_ym = 0.5
+            self.interp_zm = 0.5
+
+            dx  = geo.dx ; dy  = geo.dy ; dz  = geo.dz 
+            dxi = geo.dxi; dyi = geo.dyi; dzi = geo.dzi
+            
+            # Cell volume
+            self.vol = dx*dy*dz
+
+            # Laplace operator
+            self.Laplace = torch.zeros(nxo_,nyo_,nzo_,3,3,
+                                       dtype=geo.prec).to(geo.device)
+            # stc1=0, stc2=1
+            # x
+            self.Laplace[:,:,:,0,0].add_( dxi*dxi )
+            self.Laplace[:,:,:,0,1].add_( -2.0*dxi*dxi )
+            self.Laplace[:,:,:,0,2].add_( dxi*dxi )
+            # y
+            self.Laplace[:,:,:,1,0].add_( dyi*dyi )
+            self.Laplace[:,:,:,1,1].add_( -2.0*dyi*dyi )
+            self.Laplace[:,:,:,1,2].add_( dyi*dyi )
+            # z
+            self.Laplace[:,:,:,2,0].add_( dzi*dzi )
+            self.Laplace[:,:,:,2,1].add_( -2.0*dzi*dzi )
+            self.Laplace[:,:,:,2,2].add_( dzi*dzi )
+            
+            # Rescale the operator
+            self.Laplace.mul_( -1.0*self.vol )
+            
+            # Non-uniform grids: need to update Laplace operator border
+            
+        else:
+            print("grid type not implemented")
+
+
+    # -----------------------------------------------
