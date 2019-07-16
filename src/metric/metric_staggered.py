@@ -77,6 +77,10 @@ class metric_uniform:
             # Cell volume
             self.vol = dx*dy*dz
 
+            # Workspace array
+            self.tmpv = torch.zeros(nxo_,nyo_,nzo_,
+                                    dtype=geo.prec).to(geo.device)
+
             # Laplace operator
             self.Laplace = torch.zeros(nxo_,nyo_,nzo_,3,3,
                                        dtype=geo.prec).to(geo.device)
@@ -268,44 +272,45 @@ class metric_uniform:
     # Gradients of velocity at cell edges
     #  --> For advective-form terms in adjoint update
     def grad_vel_adj(self,state,comp):
-        # Diagonal components - use interpolated velocities
+        # Diagonal components
         if (comp=='u'):
-            # grad_x at x-faces
+            # all grad_x at x-faces
             self.interp_u_xm(state)
-            state.update_border_i()
+            #state.update_border_i()
             state.grad_x[1:,:,:].copy_( state.var_i[1: ,:,:] )
             state.grad_x[1:,:,:].sub_ ( state.var_i[:-1,:,:] )
             state.grad_x[1:,:,:].mul_ ( self.grad_x )
         elif (comp=='v'):
-            # grad_y at y-faces
+            # all grad_y at y-faces
             self.interp_v_ym(state)
-            state.update_border_i()
+            #state.update_border_i()
             state.grad_y[:,1:,:].copy_( state.var_i[:,1: ,:] )
             state.grad_y[:,1:,:].sub_ ( state.var_i[:,:-1,:] )
             state.grad_y[:,1:,:].mul_ ( self.grad_y )
         elif (comp=='w'):
-            # grad_z at z-faces
+            # all grad_z at z-faces
             self.interp_w_zm(state)
-            state.update_border_i()
+            #state.update_border_i()
             state.grad_z[:,:,1:].copy_( state.var_i[:,:,1: ] )
             state.grad_z[:,:,1:].sub_ ( state.var_i[:,:,:-1] )
             state.grad_z[:,:,1:].mul_ ( self.grad_z )
 
-        # Off-diagonal components - use cell-face velocities
+        # Off-diagonal components
+        #   --> Already have interpolated velocities at centers
         if (comp=='v' or comp=='w'):
-            # grad_x at -1/2 yz-edges
-            state.grad_x[1:,:,:].copy_( state.var[1: ,:,:] )
-            state.grad_x[1:,:,:].sub_ ( state.var[:-1,:,:] )
+            # dx
+            state.grad_x[1:,:,:].copy_( state.var_i[1: ,:,:] )
+            state.grad_x[1:,:,:].sub_ ( state.var_i[:-1,:,:] )
             state.grad_x[1:,:,:].mul_ ( self.grad_x )
         if (comp=='u' or comp=='w'):
-            # grad_y at -1/2 xy-edges
-            state.grad_y[:,1:,:].copy_( state.var[:,1: ,:] )
-            state.grad_y[:,1:,:].sub_ ( state.var[:,:-1,:] )
+            # dy
+            state.grad_y[:,1:,:].copy_( state.var_i[:,1: ,:] )
+            state.grad_y[:,1:,:].sub_ ( state.var_i[:,:-1,:] )
             state.grad_y[:,1:,:].mul_ ( self.grad_y )
         if (comp=='u' or comp=='v'):
-            # grad_z at -1/2 xz-edges
-            state.grad_z[:,:,1:].copy_( state.var[:,:,1: ] )
-            state.grad_z[:,:,1:].sub_ ( state.var[:,:,:-1] )
+            # dz
+            state.grad_z[:,:,1:].copy_( state.var_i[:,:,1: ] )
+            state.grad_z[:,:,1:].sub_ ( state.var_i[:,:,:-1] )
             state.grad_z[:,:,1:].mul_ ( self.grad_z )
 
 
@@ -315,7 +320,7 @@ class metric_uniform:
     def grad_vel_adj_cons(self,state,comp):
         # Diagonal components
         if (comp=='u'):
-            # all at x-faces
+            # all du at x-faces
             # dx
             self.interp_u_xm(state)
             #state.update_border_i()
@@ -323,7 +328,7 @@ class metric_uniform:
             state.grad_x[1:,:,:].sub_ ( state.var_i[:-1,:,:] )
             state.grad_x[1:,:,:].mul_ ( self.grad_x )
         elif (comp=='v'):
-            # all at y-faces
+            # all dv at y-faces
             # dy
             self.interp_v_ym(state)
             #state.update_border_i()
@@ -331,7 +336,7 @@ class metric_uniform:
             state.grad_y[:,1:,:].sub_ ( state.var_i[:,:-1,:] )
             state.grad_y[:,1:,:].mul_ ( self.grad_y )
         elif (comp=='w'):
-            # all at z-faces
+            # all dw at z-faces
             # dz
             self.interp_w_zm(state)
             #state.update_border_i()
@@ -520,6 +525,274 @@ class metric_uniform:
                     state_u.var_i[imin_:imax_,jmin_:jmax_,kmin_  :kmax_  ] *
                     state_w.var_i[imin_:imax_,jmin_:jmax_,kmin_  :kmax_  ] )*self.grad_z*sign
 
+
+    # ----------------------------------------------------
+    # Adjoint equation convective flux xx
+    #   1a : A11( u * u )
+    def adj_conv_xx(self,state_u_adj,state_u,rhs_u):
+        imin_ = self.imin_; imax_ = self.imax_+1
+        jmin_ = self.jmin_; jmax_ = self.jmax_+1
+        kmin_ = self.kmin_; kmax_ = self.kmax_+1
+
+        self.tmpv.zero_()
+        self.tmpv[1:,:,:].copy_( state_u_adj.var[:-1,:,:] )
+        self.tmpv[1:,:,:].sub_ ( state_u_adj.var[1: ,:,:] )
+        self.tmpv[1:,:,:].mul_ ( state_u.var_i[:-1,:,:] )
+        self.tmpv[1:,:,:].mul_ ( self.grad_x )
+        rhs_u.sub_( self.tmpv[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+        
+        self.tmpv.zero_()
+        self.tmpv[:-1,:,:].copy_( state_u_adj.var[:-1,:,:] )
+        self.tmpv[:-1,:,:].sub_ ( state_u_adj.var[1: ,:,:] )
+        self.tmpv[:-1,:,:].mul_ ( state_u.var_i[:-1,:,:] )
+        self.tmpv[:-1,:,:].mul_ ( self.grad_x )
+        rhs_u.sub_( self.tmpv[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+
+    # ----------------------------------------------------
+    # Adjoint equation convective flux yy
+    #   2b : A22( v * v )
+    def adj_conv_yy(self,state_v_adj,state_v,rhs_v):
+        imin_ = self.imin_; imax_ = self.imax_+1
+        jmin_ = self.jmin_; jmax_ = self.jmax_+1
+        kmin_ = self.kmin_; kmax_ = self.kmax_+1
+
+        self.tmpv.zero_()
+        self.tmpv[:,1:,:].copy_( state_v_adj.var[:,:-1,:] )
+        self.tmpv[:,1:,:].sub_ ( state_v_adj.var[:,1: ,:] )
+        self.tmpv[:,1:,:].mul_ ( state_v.var_i[:,:-1,:] )
+        self.tmpv[:,1:,:].mul_ ( self.grad_y )
+        rhs_v.sub_( self.tmpv[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+
+        self.tmpv.zero_()
+        self.tmpv[:,:-1,:].copy_( state_v_adj.var[:,:-1,:] )
+        self.tmpv[:,:-1,:].sub_ ( state_v_adj.var[:,1: ,:] )
+        self.tmpv[:,:-1,:].mul_ ( state_v.var_i[:,:-1,:] )
+        self.tmpv[:,:-1,:].mul_ ( self.grad_y )
+        rhs_v.sub_( self.tmpv[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+
+    # ----------------------------------------------------
+    # Adjoint equation convective flux zz
+    #   3c : A33( w * w )
+    def adj_conv_zz(self,state_w_adj,state_w,rhs_w):
+        imin_ = self.imin_; imax_ = self.imax_+1
+        jmin_ = self.jmin_; jmax_ = self.jmax_+1
+        kmin_ = self.kmin_; kmax_ = self.kmax_+1
+
+        self.tmpv.zero_()
+        self.tmpv[:,:,1:].copy_( state_w_adj.var[:,:,:-1] )
+        self.tmpv[:,:,1:].sub_ ( state_w_adj.var[:,:,1: ] )
+        self.tmpv[:,:,1:].mul_ ( state_w.var_i[:,:,:-1] )
+        self.tmpv[:,:,1:].mul_ ( self.grad_z )
+        rhs_w.sub_( self.tmpv[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+
+        self.tmpv.zero_()
+        self.tmpv[:,:,:-1].copy_( state_w_adj.var[:,:,:-1] )
+        self.tmpv[:,:,:-1].sub_ ( state_w_adj.var[:,:,1: ] )
+        self.tmpv[:,:,:-1].mul_ ( state_w.var_i[:,:,:-1] )
+        self.tmpv[:,:,:-1].mul_ ( self.grad_z )
+        rhs_w.sub_( self.tmpv[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+
+    # ----------------------------------------------------
+    # Adjoint equation convective flux x
+    #   2a : A21( v * u )
+    #   3a : A31( w * u )
+    def adj_conv_x(self,state_v_adj,state_u,rhs_v):
+        imin_ = self.imin_; imax_ = self.imax_+1
+        jmin_ = self.jmin_; jmax_ = self.jmax_+1
+        kmin_ = self.kmin_; kmax_ = self.kmax_+1
+
+        self.tmpv.zero_()
+        self.tmpv[1:,:,:].copy_( state_v_adj.var[:-1,:,:] )
+        self.tmpv[1:,:,:].sub_ ( state_v_adj.var[1: ,:,:] )
+        self.tmpv[1:,:,:].mul_ ( state_u.var_i[1:,:,:] )
+        self.tmpv[1:,:,:].mul_ ( 0.5*self.grad_x )
+        rhs_v.sub_( self.tmpv[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+
+        self.tmpv.zero_()
+        self.tmpv[:-1,:,:].copy_( state_v_adj.var[:-1,:,:] )
+        self.tmpv[:-1,:,:].sub_ ( state_v_adj.var[1: ,:,:] )
+        self.tmpv[:-1,:,:].mul_ ( state_u.var_i[1:,:,:] )
+        self.tmpv[:-1,:,:].mul_ ( 0.5*self.grad_x )
+        rhs_v.sub_( self.tmpv[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+
+    # ----------------------------------------------------
+    # Adjoint equation convective flux y
+    #   1b : A12( u * v )
+    #   3b : A32( w * v )
+    def adj_conv_y(self,state_u_adj,state_v,rhs_u):
+        imin_ = self.imin_; imax_ = self.imax_+1
+        jmin_ = self.jmin_; jmax_ = self.jmax_+1
+        kmin_ = self.kmin_; kmax_ = self.kmax_+1
+
+        self.tmpv.zero_()
+        self.tmpv[:,1:,:].copy_( state_u_adj.var[:,:-1,:] )
+        self.tmpv[:,1:,:].sub_ ( state_u_adj.var[:,1: ,:] )
+        self.tmpv[:,1:,:].mul_ ( state_v.var_i[:,1:,:] )
+        self.tmpv[:,1:,:].mul_ ( 0.5*self.grad_y )
+        rhs_u.sub_( self.tmpv[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+
+        self.tmpv.zero_()
+        self.tmpv[:,:-1,:].copy_( state_u_adj.var[:,:-1,:] )
+        self.tmpv[:,:-1,:].sub_ ( state_u_adj.var[:,1: ,:] )
+        self.tmpv[:,:-1,:].mul_ ( state_v.var_i[:,1:,:] )
+        self.tmpv[:,:-1,:].mul_ ( 0.5*self.grad_y )
+        rhs_u.sub_( self.tmpv[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+
+    # ----------------------------------------------------
+    # Adjoint equation convective flux z
+    #   1c : A13( u * w )
+    #   2c : A23( v * w )
+    def adj_conv_z(self,state_u_adj,state_w,rhs_u):
+        imin_ = self.imin_; imax_ = self.imax_+1
+        jmin_ = self.jmin_; jmax_ = self.jmax_+1
+        kmin_ = self.kmin_; kmax_ = self.kmax_+1
+
+        self.tmpv.zero_()
+        self.tmpv[:,:,1:].copy_( state_u_adj.var[:,:,:-1] )
+        self.tmpv[:,:,1:].sub_ ( state_u_adj.var[:,:,1: ] )
+        self.tmpv[:,:,1:].mul_ ( state_w.var_i[:,:,1:] )
+        self.tmpv[:,:,1:].mul_ ( 0.5*self.grad_z )
+        rhs_u.sub_( self.tmpv[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+
+        self.tmpv.zero_()
+        self.tmpv[:,:,:-1].copy_( state_u_adj.var[:,:,:-1] )
+        self.tmpv[:,:,:-1].sub_ ( state_u_adj.var[:,:,1: ] )
+        self.tmpv[:,:,:-1].mul_ ( state_w.var_i[:,:,1:] )
+        self.tmpv[:,:,:-1].mul_ ( 0.5*self.grad_z )
+        rhs_u.sub_( self.tmpv[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+
+    # ----------------------------------------------------
+    # Adjoint equation convective flux 1d
+    #   1d : A21( v * u )
+    def adj_conv_1d(self,state_v_adj,state_v,rhs_u):
+        imin_ = self.imin_; imax_ = self.imax_+1
+        jmin_ = self.jmin_; jmax_ = self.jmax_+1
+        kmin_ = self.kmin_; kmax_ = self.kmax_+1
+
+        self.tmpv.zero_()
+        self.tmpv[1:,:,:].copy_( state_v_adj.var[:-1,:,:] )
+        self.tmpv[1:,:,:].sub_ ( state_v_adj.var[1: ,:,:] )
+        self.tmpv[1:,:,:].mul_ ( state_v.var_i[1:,:,:] )
+        self.tmpv[1:,:,:].mul_ ( 0.5*self.grad_x )
+        rhs_u.sub_( self.tmpv[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+
+        self.tmpv.zero_()
+        self.tmpv[1:,:-1,:].copy_( state_v_adj.var[:-1,1:,:] )
+        self.tmpv[1:,:-1,:].sub_ ( state_v_adj.var[1: ,1:,:] )
+        self.tmpv[1:,:-1,:].mul_ ( state_v.var_i[1:,1:,:] )
+        self.tmpv[1:,:-1,:].mul_ ( 0.5*self.grad_x )
+        rhs_u.sub_( self.tmpv[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+
+    # ----------------------------------------------------
+    # Adjoint equation convective flux 1e
+    #   1e : A31( w * u )
+    def adj_conv_1e(self,state_w_adj,state_w,rhs_u):
+        imin_ = self.imin_; imax_ = self.imax_+1
+        jmin_ = self.jmin_; jmax_ = self.jmax_+1
+        kmin_ = self.kmin_; kmax_ = self.kmax_+1
+
+        self.tmpv.zero_()
+        self.tmpv[1:,:,:].copy_( state_w_adj.var[:-1,:,:] )
+        self.tmpv[1:,:,:].sub_ ( state_w_adj.var[1: ,:,:] )
+        self.tmpv[1:,:,:].mul_ ( state_w.var_i[1:,:,:] )
+        self.tmpv[1:,:,:].mul_ ( 0.5*self.grad_x )
+        rhs_u.sub_( self.tmpv[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+
+        self.tmpv.zero_()
+        self.tmpv[1:,:,:-1].copy_( state_w_adj.var[:-1,:,1:] )
+        self.tmpv[1:,:,:-1].sub_ ( state_w_adj.var[1: ,:,1:] )
+        self.tmpv[1:,:,:-1].mul_ ( state_w.var_i[1:,:,1:] )
+        self.tmpv[1:,:,:-1].mul_ ( 0.5*self.grad_x )
+        rhs_u.sub_( self.tmpv[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+
+    # ----------------------------------------------------
+    # Adjoint equation convective flux 2d
+    #   2d : A12( u * v )
+    def adj_conv_2d(self,state_u_adj,state_u,rhs_v):
+        imin_ = self.imin_; imax_ = self.imax_+1
+        jmin_ = self.jmin_; jmax_ = self.jmax_+1
+        kmin_ = self.kmin_; kmax_ = self.kmax_+1
+
+        self.tmpv.zero_()
+        self.tmpv[:,1:,:].copy_( state_u_adj.var[:,:-1,:] )
+        self.tmpv[:,1:,:].sub_ ( state_u_adj.var[:,1: ,:] )
+        self.tmpv[:,1:,:].mul_ ( state_u.var_i[:,1:,:] )
+        self.tmpv[:,1:,:].mul_ ( 0.5*self.grad_y )
+        rhs_v.sub_( self.tmpv[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+
+        self.tmpv.zero_()
+        self.tmpv[:-1,1:,:].copy_( state_u_adj.var[1:,:-1,:] )
+        self.tmpv[:-1,1:,:].sub_ ( state_u_adj.var[1:,1: ,:] )
+        self.tmpv[:-1,1:,:].mul_ ( state_u.var_i[1:,1:,:] )
+        self.tmpv[:-1,1:,:].mul_ ( 0.5*self.grad_y )
+        rhs_v.sub_( self.tmpv[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+
+    # ----------------------------------------------------
+    # Adjoint equation convective flux 2e
+    #   2e : A32( w * v )
+    def adj_conv_2e(self,state_w_adj,state_w,rhs_v):
+        imin_ = self.imin_; imax_ = self.imax_+1
+        jmin_ = self.jmin_; jmax_ = self.jmax_+1
+        kmin_ = self.kmin_; kmax_ = self.kmax_+1
+
+        self.tmpv.zero_()
+        self.tmpv[:,1:,:].copy_( state_w_adj.var[:,:-1,:] )
+        self.tmpv[:,1:,:].sub_ ( state_w_adj.var[:,1: ,:] )
+        self.tmpv[:,1:,:].mul_ ( state_w.var_i[:,1:,:] )
+        self.tmpv[:,1:,:].mul_ ( 0.5*self.grad_y )
+        rhs_v.sub_( self.tmpv[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+
+        self.tmpv.zero_()
+        self.tmpv[:,1:,:-1].copy_( state_w_adj.var[:,:-1,1:] )
+        self.tmpv[:,1:,:-1].sub_ ( state_w_adj.var[:,1: ,1:] )
+        self.tmpv[:,1:,:-1].mul_ ( state_w.var_i[:,1:,1:] )
+        self.tmpv[:,1:,:-1].mul_ ( 0.5*self.grad_y )
+        rhs_v.sub_( self.tmpv[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+
+    # ----------------------------------------------------
+    # Adjoint equation convective flux 3d
+    #   3d : A13( u * w )
+    def adj_conv_3d(self,state_u_adj,state_u,rhs_w):
+        imin_ = self.imin_; imax_ = self.imax_+1
+        jmin_ = self.jmin_; jmax_ = self.jmax_+1
+        kmin_ = self.kmin_; kmax_ = self.kmax_+1
+
+        self.tmpv.zero_()
+        self.tmpv[:,:,1:].copy_( state_u_adj.var[:,:,:-1] )
+        self.tmpv[:,:,1:].sub_ ( state_u_adj.var[:,:,1: ] )
+        self.tmpv[:,:,1:].mul_ ( state_u.var_i[:,:,1:] )
+        self.tmpv[:,:,1:].mul_ ( 0.5*self.grad_z )
+        rhs_w.sub_( self.tmpv[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+
+        self.tmpv.zero_()
+        self.tmpv[:-1,:,1:].copy_( state_u_adj.var[1:,:,:-1] )
+        self.tmpv[:-1,:,1:].sub_ ( state_u_adj.var[1:,:,1: ] )
+        self.tmpv[:-1,:,1:].mul_ ( state_u.var_i[1:,:,1:] )
+        self.tmpv[:-1,:,1:].mul_ ( 0.5*self.grad_z )
+        rhs_w.sub_( self.tmpv[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+
+    # ----------------------------------------------------
+    # Adjoint equation convective flux 3e
+    #   3e : A23( v * w )
+    def adj_conv_3e(self,state_v_adj,state_v,rhs_w):
+        imin_ = self.imin_; imax_ = self.imax_+1
+        jmin_ = self.jmin_; jmax_ = self.jmax_+1
+        kmin_ = self.kmin_; kmax_ = self.kmax_+1
+
+        self.tmpv.zero_()
+        self.tmpv[:,:,1:].copy_( state_v_adj.var[:,:,:-1] )
+        self.tmpv[:,:,1:].sub_ ( state_v_adj.var[:,:,1: ] )
+        self.tmpv[:,:,1:].mul_ ( state_v.var_i[:,:,1:] )
+        self.tmpv[:,:,1:].mul_ ( 0.5*self.grad_z )
+        rhs_w.sub_( self.tmpv[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+
+        self.tmpv.zero_()
+        self.tmpv[:,:-1,1:].copy_( state_v_adj.var[:,1:,:-1] )
+        self.tmpv[:,:-1,1:].sub_ ( state_v_adj.var[:,1:,1: ] )
+        self.tmpv[:,:-1,1:].mul_ ( state_v.var_i[:,1:,1:] )
+        self.tmpv[:,:-1,1:].mul_ ( 0.5*self.grad_z )
+        rhs_w.sub_( self.tmpv[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
+        
 
 
 

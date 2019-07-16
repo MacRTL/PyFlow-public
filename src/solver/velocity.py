@@ -37,8 +37,7 @@ import sys
 #
 sys.path.append("../data")
 import state
-#
-import pressure
+
 
 # ----------------------------------------------------
 # Forward RHS class
@@ -75,8 +74,6 @@ class ForwardRHS:
         else:
             if (decomp.rank==0):
                 raise Exception("Equation setting not recognized; consequences unknown...")
-            
-    #def step(self,sfsmodel):
         
 
 # ----------------------------------------------------
@@ -319,13 +316,6 @@ class rhs_NavierStokes:
         # Divergence of the viscous+SFS flux
         self.metric.div_visc(self.FX,self.FY,self.FZ,self.rhs_w)
 
-        #print("Done forward visc")
-        #return
-
-    
-    #def dont_use(self):
-        #print("oops")
-
         
         # Advective fluxes
         # xx
@@ -363,6 +353,13 @@ class rhs_NavierStokes:
         # zz
         self.metric.interp_w_zm(state_w)
         self.metric.vel_conv_zz(state_w,state_w,self.rhs_w)
+
+        #print("Done forward visc")
+        #return
+
+    
+    def dont_use(self):
+        print("oops")
 
         
         # Source-type SFS models, including ML models

@@ -102,8 +102,8 @@ class inputConfigClass:
         self.rho = 1.2
 
         # Time step info
-        self.simDt        = 1.0e-6
-        self.numIt        = 1
+        self.simDt        = 1.0e-5
+        self.numIt        = 20
         self.startTime    = 0.0
         
         # SFS model settings
@@ -121,14 +121,14 @@ class inputConfigClass:
         # Adjoint training settings
         #   PyFlow will look for a target data file every numCheckpointIt
         self.adjointTraining = True
-        self.numCheckpointIt = 1
+        self.numCheckpointIt = 20
 
         # Solver settings
         #   advancerName options: Euler, RK4
         #   equationMode options: scalar, NS
         #   pSolverMode options:  Jacobi, bicgstab
         #
-        self.advancerName = "RK4"
+        self.advancerName = "Euler"
         self.equationMode = "NS"
         #
         # Pressure solver settings
@@ -165,14 +165,13 @@ def main(argv):
     maxIter = inputConfig.numIt
 
     #testName = 'diff_noAdv_noPressure'
-    #testName = 'diff_adv_noPressure'
-    testName = 'diff_advCons_noPressure'
-    #testName = 'diff_advNoCross_noPressure'
+    #testName = 'diff_advOld_noPressure'
+    testName = 'diff_adv_noPressure'
     #testName = 'diff_noAdv_pressure'
+    #testName = 'diff_advOld_pressure'
     #testName = 'diff_adv_pressure'
-    #testName = 'diff_advCons_pressure'
-    #testName = 'diff_advNoCross_pressure'
-    perturbationList = [0.0, 5e-1, 1e-1, 5e-2, 1e-2, 5e-3, 1e-3, 5e-4]#, 1e-4, 5e-5, 1e-5, 5e-6, 1e-6]
+    perturbationList = [0.0, 5e-1, 1e-1, 5e-2, 1e-2, 5e-3, 1e-3, 5e-4, 1e-4, 5e-5, \
+                        1e-5, 5e-6, 1e-6]
     
     objList = np.empty(0,dtype=np.float64)
     adjList = np.empty(0,dtype=np.float64)
@@ -187,6 +186,9 @@ def main(argv):
         # Save the results
         objList = np.append(objList,obj)
         adjList = np.append(adjList,adj)
+
+        # Turn off adjoint training after perturbations start
+        inputConfig.adjointTraining = False
         
 
     print(objList,adjList)
@@ -194,17 +196,23 @@ def main(argv):
 
     
     # Compute error
+    #
+    # --> JFM - should this be compared to old_adj or new_adj? What is
+    # --> the correct time level for the adjoint comparison?
+    #
     deltaList = np.empty(0,dtype=np.float64)
     errorList = np.empty(0,dtype=np.float64)
     old_obj = objList[0]
+    old_adj = adjList[0]
     ii = 0
     for Delta in perturbationList[1:]:
         ii += 1
         new_obj = objList[ii]
         num_adj = (new_obj - old_obj)/Delta
         new_adj = adjList[ii]
-        error   = new_adj - num_adj
-        rel_err = abs(error/new_adj)
+        error   = old_adj - num_adj
+        rel_err = abs(error/old_adj)
+        #rel_err = abs(error/num_adj)
         print("Delta={:5.7E}, adjoint={:5.7E}, num_adj={:5.7E}, error={:5.7E}, rel_err={:5.7E}"
               .format(Delta,new_adj,num_adj,error,rel_err))
 
@@ -215,7 +223,7 @@ def main(argv):
         
     # Plot the error convergence
     fSize = 20
-    fig1,ax1 = plt.subplots(figsize=(5.5,4))
+    fig1,ax1 = plt.subplots(figsize=(4,3.125))
 
     plt.xscale('log')
     plt.yscale('log')
@@ -226,13 +234,15 @@ def main(argv):
     cvg2 = ax1.plot(deltaList,deltaList*1e-1,color='k',linestyle='--')
 
     ax1.legend(('Error','1:1'))
-    plt.title('Case: '+testName+', Iter='+str(maxIter))
+    plt.title(testName+', iter='+str(maxIter)+', Dt='+str(inputConfig.simDt))
     plt.tight_layout()
 
     folder = 'figures/'
     if (not os.path.exists(folder)):
         os.mkdir(folder)
-    fig1.savefig(folder+'errorCvg_Iter'+str(maxIter)+'_'+testName+'.pdf')
+    fig1.savefig(folder+'errorCvg_'+testName+
+                 '_iter'+str(maxIter)+
+                 '_dt'+str(inputConfig.simDt)+'.pdf')
     plt.show()
     
     

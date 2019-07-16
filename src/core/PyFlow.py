@@ -128,6 +128,10 @@ def run(inputConfig):
             # Perturb the initial condition
             nn = geometry.imin_ + geometry.nx_//2
             D.state_u_P.var[nn,nn,nn] += inputConfig.perturbation
+
+            new_obj = 0.0
+            new_adj = 0.0
+            
         else:
             print("Not performing adjoint verification")
     except:
@@ -233,12 +237,10 @@ def run(inputConfig):
         # ----------------------------------------------------
         while (simTime < stopTime and itCountInner < numStepsInner):
 
-
             # ----------------------------------------------------
             # Evaluate the forward step
             #
             D.forwardStep(simDt)
-
         
             # ----------------------------------------------------
             # Checkpoint the velocity solution
@@ -247,7 +249,6 @@ def run(inputConfig):
                 D.check_u_P[:,:,:,itCountInner+1].copy_(D.state_u_P.var)
                 D.check_v_P[:,:,:,itCountInner+1].copy_(D.state_v_P.var)
                 D.check_w_P[:,:,:,itCountInner+1].copy_(D.state_w_P.var)
-            
                 
             # ----------------------------------------------------
             # Post-step tasks
@@ -259,13 +260,19 @@ def run(inputConfig):
             simTimeCheckpoint = simTime
             
             # Compute stats
+            viscNu = inputConfig.mu/inputConfig.rho
             maxU = comms.parallel_max(D.data_all_CPU.absmax(0))
             maxV = comms.parallel_max(D.data_all_CPU.absmax(1))
             maxW = comms.parallel_max(D.data_all_CPU.absmax(2))
             maxCFL = max((maxU/geometry.dx,maxV/geometry.dy,maxW/geometry.dz))*simDt
+            maxVNN = max((viscNu/geometry.dx**2,viscNu/geometry.dy**2,
+                          viscNu/geometry.dz**2))*simDt
+            # This works but won't tell user whether CFL or VNN is limiting
+            maxCFL = max((maxCFL,maxVNN))
             TKE  = comms.parallel_sum(np.sum( D.data_all_CPU.read(0)**2 +
                                               D.data_all_CPU.read(1)**2 +
-                                              D.data_all_CPU.read(2)**2 ))*0.5/float(decomp.N)
+                                              D.data_all_CPU.read(2)**2 )) * \
+                                              0.5/float(decomp.N)
             if (inputConfig.equationMode=='NS'):
                 # Compute the final divergence
                 metric.div_vel(D.state_u_P,D.state_v_P,D.state_w_P,D.source_P)
@@ -275,7 +282,8 @@ def run(inputConfig):
             if (inputConfig.equationMode=='NS'):
                 if (decomp.rank==0):
                     lineStr = "  {:10d}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}    {:8.3E}"
-                    print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW,TKE,maxDivg,D.max_resP))
+                    print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW,
+                                         TKE,maxDivg,D.max_resP))
             else:
                 if (decomp.rank==0):
                     lineStr = "  {:10d}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}"
@@ -297,7 +305,8 @@ def run(inputConfig):
                 decomp.plot_fig_root(dr,D.state_u_P.var,"state_U_"+str(itCount)+"_"+timeStr)
 
             # Compare to target DNS data
-            if (D.useTargetData and np.mod(itCount,D.numItTargetComp)==0 and not inputConfig.adjointTraining):
+            if (D.useTargetData and np.mod(itCount,D.numItTargetComp)==0 and \
+                not inputConfig.adjointTraining):
                 # Only on root processor for now
                 targetFileIt  = inputConfig.startFileIt+itCount
                 targetFileStr = inputConfig.targetFileBaseStr + str(targetFileIt)
@@ -308,7 +317,8 @@ def run(inputConfig):
                     if (False): #(simTime!=simTime_t):
                         raise Exception("\nPyFlow: target file not at same time as simulation\n")
                     else:
-                        print(" --> Comparing to target data file {} at time {:10.5E}".format(targetFileIt,simTime_t))
+                        print(" --> Comparing to target data file {} at time {:10.5E}"
+                              .format(targetFileIt,simTime_t))
 
                 # Read the target state data
                 #dr.readNGArestart_parallel(targetFileStr,target_data_all_CPU,ivar_read_start=0,nvar_read=3)
@@ -326,7 +336,8 @@ def run(inputConfig):
                 #/(geometry.Nx*geometry.Ny*geometry.Nz)
                 
                 if (decomp.rank==0):
-                    print("     Max(U) sim: {:10.5E}, Max(U) target: {:10.5E}".format(maxU_sim,maxU_t))
+                    print("     Max(U) sim: {:10.5E}, Max(U) target: {:10.5E}"
+                          .format(maxU_sim,maxU_t))
                     print("     L1 error  : {:10.5E}".format(L1_error))
                     
         ## END OF FORWARD INNER LOOP
@@ -334,7 +345,9 @@ def run(inputConfig):
 
         # Adjoint verification: print the objective function
         if (adjointVerification):
-            new_obj = torch.mean( (D.state_u_P.interior() - 0.0)**2 ).numpy() 
+            new_obj  = torch.mean( (D.state_u_P.interior() - 0.0)**2 ).numpy()
+            new_obj += torch.mean( (D.state_v_P.interior() - 0.0)**2 ).numpy()
+            new_obj += torch.mean( (D.state_w_P.interior() - 0.0)**2 ).numpy() 
             print("Objective function: {}".format(new_obj))
         
         
@@ -347,8 +360,10 @@ def run(inputConfig):
             # Load target state
             if (adjointVerification):
                 D.state_u_adj_P.var.copy_( 2.0*(D.state_u_P.var - 0.0) )
-                D.state_v_adj_P.var.copy_( 0.0*(D.state_v_P.var - 0.0) )
-                D.state_w_adj_P.var.copy_( 0.0*(D.state_w_P.var - 0.0) )
+                #D.state_v_adj_P.var.copy_( 0.0*(D.state_v_P.var - 0.0) )
+                #D.state_w_adj_P.var.copy_( 0.0*(D.state_w_P.var - 0.0) )
+                D.state_v_adj_P.var.copy_( 2.0*(D.state_v_P.var - 0.0) )
+                D.state_w_adj_P.var.copy_( 2.0*(D.state_w_P.var - 0.0) )
 
             else:
                 targetDataFileStr = inputConfig.dataFileBStr + \
@@ -371,20 +386,18 @@ def run(inputConfig):
             while (itCountInner > 0):
 
                 # ----------------------------------------------------
-                # Load the checkpointed velocity solution at time 't'
+                # Load the checkpointed velocity solution at time t+1
                 #   Overlap cells are already synced in the
                 #   checkpointed solutions
                 # --> JFM: check correct time is loaded??
-                D.state_u_P.var.copy_( D.check_u_P[:,:,:,itCountInner] )
-                D.state_v_P.var.copy_( D.check_v_P[:,:,:,itCountInner] )
-                D.state_w_P.var.copy_( D.check_w_P[:,:,:,itCountInner] )
-                
+                D.state_u_P.var.copy_( D.check_u_P[:,:,:,itCountInner-1] )
+                D.state_v_P.var.copy_( D.check_v_P[:,:,:,itCountInner-1] )
+                D.state_w_P.var.copy_( D.check_w_P[:,:,:,itCountInner-1] )
                 
                 # ----------------------------------------------------
                 # Evaluate the adjoint step
                 #
                 D.adjointStep(simDt)
-                
                 
                 # ----------------------------------------------------
                 # Post-step tasks
@@ -403,7 +416,8 @@ def run(inputConfig):
                 # Print stats
                 if (decomp.rank==0):
                     lineStr = "  Adj {:6d}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:9s}   {:9s}    {:8.3E}"
-                    print(lineStr.format(itCount-itCountInnerUp,simTime,maxCFL,maxU,maxV,maxW,
+                    print(lineStr.format(itCount-itCountInnerUp,simTime,maxCFL,
+                                         maxU,maxV,maxW,
                                          ' ',' ',D.max_resP))
             
             ## END OF ADJOINT INNER LOOP
@@ -475,14 +489,13 @@ def run(inputConfig):
     else:
         if (decomp.rank==0):
             print("it={}, test={:10.5E}, elapsed={}".format(itCount,test,time_elapsed))
-            print("Energy initial={:10.5E}, final={:10.5E}, ratio={:10.5E}".format(initEnergy,finalEnergy,
-                                                                                   finalEnergy/initEnergy))
+            print("Energy initial={:10.5E}, final={:10.5E}, ratio={:10.5E}"
+                  .format(initEnergy,finalEnergy,finalEnergy/initEnergy))
             
     if (inputConfig.plotState):
         # Print a pretty picture
         timeStr = "{:12.7E}_{}".format(simTime,decomp.rank)
         decomp.plot_fig_root(dr,state_u_P.var,"state_U_"+str(itCount)+"_"+timeStr)
-
         
     # Return data as required
     if (adjointVerification):
