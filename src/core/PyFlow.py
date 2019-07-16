@@ -346,8 +346,8 @@ def run(inputConfig):
         # Adjoint verification: print the objective function
         if (adjointVerification):
             new_obj  = torch.mean( (D.state_u_P.interior() - 0.0)**2 ).numpy()
-            new_obj += torch.mean( (D.state_v_P.interior() - 0.0)**2 ).numpy()
-            new_obj += torch.mean( (D.state_w_P.interior() - 0.0)**2 ).numpy() 
+            #new_obj += torch.mean( (D.state_v_P.interior() - 0.0)**2 ).numpy()
+            #new_obj += torch.mean( (D.state_w_P.interior() - 0.0)**2 ).numpy() 
             print("Objective function: {}".format(new_obj))
         
         
@@ -360,10 +360,10 @@ def run(inputConfig):
             # Load target state
             if (adjointVerification):
                 D.state_u_adj_P.var.copy_( 2.0*(D.state_u_P.var - 0.0) )
-                #D.state_v_adj_P.var.copy_( 0.0*(D.state_v_P.var - 0.0) )
-                #D.state_w_adj_P.var.copy_( 0.0*(D.state_w_P.var - 0.0) )
-                D.state_v_adj_P.var.copy_( 2.0*(D.state_v_P.var - 0.0) )
-                D.state_w_adj_P.var.copy_( 2.0*(D.state_w_P.var - 0.0) )
+                D.state_v_adj_P.var.copy_( 0.0*(D.state_v_P.var - 0.0) )
+                D.state_w_adj_P.var.copy_( 0.0*(D.state_w_P.var - 0.0) )
+                #D.state_v_adj_P.var.copy_( 2.0*(D.state_v_P.var - 0.0) )
+                #D.state_w_adj_P.var.copy_( 2.0*(D.state_w_P.var - 0.0) )
 
             else:
                 targetDataFileStr = inputConfig.dataFileBStr + \

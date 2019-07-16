@@ -102,8 +102,8 @@ class inputConfigClass:
         self.rho = 1.2
 
         # Time step info
-        self.simDt        = 1.0e-5
-        self.numIt        = 20
+        self.simDt        = 1.0e-6
+        self.numIt        = 10
         self.startTime    = 0.0
         
         # SFS model settings
@@ -121,7 +121,7 @@ class inputConfigClass:
         # Adjoint training settings
         #   PyFlow will look for a target data file every numCheckpointIt
         self.adjointTraining = True
-        self.numCheckpointIt = 20
+        self.numCheckpointIt = 10
 
         # Solver settings
         #   advancerName options: Euler, RK4
@@ -165,11 +165,9 @@ def main(argv):
     maxIter = inputConfig.numIt
 
     #testName = 'diff_noAdv_noPressure'
-    #testName = 'diff_advOld_noPressure'
-    testName = 'diff_adv_noPressure'
+    #testName = 'diff_adv_noPressure'
     #testName = 'diff_noAdv_pressure'
-    #testName = 'diff_advOld_pressure'
-    #testName = 'diff_adv_pressure'
+    testName = 'diff_adv_pressure'
     perturbationList = [0.0, 5e-1, 1e-1, 5e-2, 1e-2, 5e-3, 1e-3, 5e-4, 1e-4, 5e-5, \
                         1e-5, 5e-6, 1e-6]
     
