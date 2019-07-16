@@ -167,8 +167,7 @@ class rhs_adjPredictor:
         self.metric.div_visc(self.FX,self.FY,self.FZ,self.rhs_w)
 
 
-
-        # Advective fluxes -- DISCRETE EXACT
+        # Discrete-exact advective fluxes
         #
         # U-adjoint equation
         # 1a : A11( u * u )

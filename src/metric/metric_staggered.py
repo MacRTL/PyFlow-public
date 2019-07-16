@@ -529,6 +529,11 @@ class metric_uniform:
     # ----------------------------------------------------
     # Adjoint equation convective flux xx
     #   1a : A11( u * u )
+    #
+    #   ---> NOTE: The derivation of these discrete-exact adjoint
+    #   ---> convective fluxes assumes a uniform grid. Revisit the
+    #   ---> derivation before implementing for non-uniform grids!
+    #
     def adj_conv_xx(self,state_u_adj,state_u,rhs_u):
         imin_ = self.imin_; imax_ = self.imax_+1
         jmin_ = self.jmin_; jmax_ = self.jmax_+1
