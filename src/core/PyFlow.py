@@ -117,14 +117,32 @@ def run(inputConfig):
 
 
     # ----------------------------------------------------
+    # Adjoint-based model training
+    # ----------------------------------------------------
+    adjointTraining = False
+    try:
+        adjointTraining = inputConfig.adjointTraining
+        if (adjointTraining):
+            if (decomp.rank==0):
+                print("Performing adjoint-based model training")
+        else:
+            if (decomp.rank==0):
+                print("Not performing adjoint-based model training")
+    except:
+        if (decomp.rank==0):
+            print("Adjoint-based training settings not specified")
+
+
+    # ----------------------------------------------------
     # Adjoint verification
     # ----------------------------------------------------
     adjointVerification = False
     try:
         adjointVerification = inputConfig.adjointVerification
         if (adjointVerification):
-            print("Performing adjoint verification, perturbation={}"
-                  .format(inputConfig.perturbation))
+            if (decomp.rank==0):
+                print("Performing adjoint verification, perturbation={}"
+                      .format(inputConfig.perturbation))
             # Perturb the initial condition
             nn = geometry.imin_ + geometry.nx_//2
             D.state_u_P.var[nn,nn,nn] += inputConfig.perturbation
@@ -133,9 +151,11 @@ def run(inputConfig):
             new_adj = 0.0
             
         else:
-            print("Not performing adjoint verification")
+            if (decomp.rank==0):
+                print("Not performing adjoint verification")
     except:
-        print("Adjoint verification settings not specified")
+        if (decomp.rank==0):
+            print("Adjoint verification settings not specified")
 
         
     # ----------------------------------------------------
@@ -211,7 +231,7 @@ def run(inputConfig):
     itCount = 0
 
     # Configure the main simulation loop
-    if (inputConfig.adjointTraining):
+    if (adjointTraining):
         # Adjoint training: divide outer loop into checkpointed inner loops
         numStepsOuter = inputConfig.numIt//D.numCheckpointIt
         numStepsInner = D.numCheckpointIt
@@ -227,7 +247,7 @@ def run(inputConfig):
         itCountInner = 0
         
         # Checkpoint the velocity initial condition
-        if (inputConfig.adjointTraining):
+        if (adjointTraining):
             D.check_u_P[:,:,:,itCountInner].copy_(D.state_u_P.var)
             D.check_v_P[:,:,:,itCountInner].copy_(D.state_v_P.var)
             D.check_w_P[:,:,:,itCountInner].copy_(D.state_w_P.var)
@@ -245,7 +265,7 @@ def run(inputConfig):
             # ----------------------------------------------------
             # Checkpoint the velocity solution
             #
-            if (inputConfig.adjointTraining):
+            if (adjointTraining):
                 D.check_u_P[:,:,:,itCountInner+1].copy_(D.state_u_P.var)
                 D.check_v_P[:,:,:,itCountInner+1].copy_(D.state_v_P.var)
                 D.check_w_P[:,:,:,itCountInner+1].copy_(D.state_w_P.var)
@@ -306,7 +326,7 @@ def run(inputConfig):
 
             # Compare to target DNS data
             if (D.useTargetData and np.mod(itCount,D.numItTargetComp)==0 and \
-                not inputConfig.adjointTraining):
+                not adjointTraining):
                 # Only on root processor for now
                 targetFileIt  = inputConfig.startFileIt+itCount
                 targetFileStr = inputConfig.targetFileBaseStr + str(targetFileIt)
@@ -354,7 +374,7 @@ def run(inputConfig):
         # ----------------------------------------------------
         # Adjoint inner loop
         # ----------------------------------------------------
-        if (inputConfig.adjointTraining):
+        if (adjointTraining):
             itCountInnerUp = 0
             
             # Load target state
@@ -501,7 +521,7 @@ def run(inputConfig):
     if (adjointVerification):
         return new_obj,new_adj
     else:
-        return None,None
+        return
 
     
 ## END run

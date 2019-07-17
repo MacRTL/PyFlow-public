@@ -90,7 +90,10 @@ class Domain:
         self.metric = metric
         
         # Target data settings
-        self.useTargetData = inputConfig.useTargetData
+        try:
+            self.useTargetData = inputConfig.useTargetData
+        except:
+            self.useTargetData = False
 
         # ----------------------------------------------------
         # Allocate memory for state data
@@ -129,7 +132,12 @@ class Domain:
         
         # ----------------------------------------------------
         # Allocate memory for adjoint training
-        if (inputConfig.adjointTraining):
+        try:
+            adjointTraining = inputConfig.adjointTraining
+        except:
+            adjointTraining = False
+            
+        if (adjointTraining):
             
             # Check for a few prerequisites
             if (inputConfig.SFSmodel!="ML"):
@@ -190,7 +198,7 @@ class Domain:
 
             # Read the target data file
             #   Adjoint training reads target files in outer iteration loop
-            if (not inputConfig.adjointTraining):
+            if (not adjointTraining):
                 targetDataFileStr = inputConfig.targetFileBaseStr + \
                     '{:08d}'.format(inputConfig.startFileIt)
                 dr.readNGArestart_parallel(targetDataFileStr,self.target_data_all_CPU)
@@ -199,11 +207,17 @@ class Domain:
         # ----------------------------------------------------
         # Initialize SFS model
         self.use_SFSmodel = True
-        if (inputConfig.SFSmodel=='Smagorinsky'):
+        try:
+            SFSmodelName = inputConfig.SFSmodel
+        except:
+            SFSmodelName = 'none'
+
+        # Determine if the SFS model is implemented
+        if (SFSmodelName=='Smagorinsky'):
             self.sfsmodel = sfsmodel_smagorinsky.stress_constCs(inputConfig,geometry)
-        elif (inputConfig.SFSmodel=='gradient'):
+        elif (SFSmodelName=='gradient'):
             self.sfsmodel = sfsmodel_gradient.residual_stress(decomp,geometry,metric)
-        elif (inputConfig.SFSmodel=='ML'):
+        elif (SFSmodelName=='ML'):
             self.sfsmodel = sfsmodel_ML.residual_stress(inputConfig,decomp,geometry)
         else:
             # Construct a blank SFSmodel object
@@ -215,7 +229,7 @@ class Domain:
             self.muMolec = self.mu
 
         if (decomp.rank==0 and self.use_SFSmodel):
-            print('\nSFS model: {}'.format(inputConfig.SFSmodel))
+            print('\nSFS model: {}'.format(SFSmodelName))
 
         
         # ----------------------------------------------------
@@ -225,7 +239,7 @@ class Domain:
         
         # ----------------------------------------------------
         # Initialize adjoint solver RHS
-        if (inputConfig.adjointTraining):
+        if (adjointTraining):
             self.adjointRHS = adjoint.AdjointRHS(inputConfig,decomp,metric,
                                                  self.rho,self.VISC_P,self.sfsmodel,
                                                  self.state_u_P,self.state_v_P,self.state_w_P)
@@ -236,7 +250,7 @@ class Domain:
         if (inputConfig.advancerName=="Euler"):
             self.forwardAdvancer = advancer.Euler(self.state_u_P,self.state_v_P,self.state_w_P,
                                                   self.forwardRHS)
-            if (inputConfig.adjointTraining):
+            if (adjointTraining):
                 self.adjointAdvancer = advancer.Euler(self.state_u_adj_P,self.state_v_adj_P,
                                                       self.state_w_adj_P,self.adjointRHS)
 
@@ -245,7 +259,7 @@ class Domain:
                                                 self.state_v_P,self.state_vTmp_P,
                                                 self.state_w_P,self.state_wTmp_P,
                                                 self.forwardRHS)
-            if (inputConfig.adjointTraining):
+            if (adjointTraining):
                 self.adjointAdvancer = advancer.RK4(self.state_u_adj_P,self.state_uTmp_adj_P,
                                                     self.state_v_adj_P,self.state_vTmp_adj_P,
                                                     self.state_w_adj_P,self.state_wTmp_adj_P,
