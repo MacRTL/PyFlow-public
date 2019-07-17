@@ -192,7 +192,7 @@ class Domain:
                         '{:08d}'.format(itCount)
                     if (not os.path.exists(targetDataFileStr)):
                         newNumIt = itCount-self.numItTargetComp
-                        inputConfig.numIt = newNumIt
+                        inputConfig.numIt = newNumIt-startIt
                         if (decomp.rank==0):
                             print('\nCould not find sufficient target files for requested numIt;'+
                                   ' stopping at it={}'
