@@ -251,16 +251,16 @@ class rhs_adjPredictor:
         self.metric.interp_v_ym( state_v_adj )
         self.metric.interp_w_zm( state_w_adj )
         # Pre-allocate u_A_det, etc?
-        u_A_det = Variable(state_u_adj.var_i).detach()
-        v_A_det = Variable(state_v_adj.var_i).detach()
-        w_A_det = Variable(state_w_adj.var_i).detach()
+        u_A_det = Variable(state_u_adj.var_i).detach().to(self.device)
+        v_A_det = Variable(state_v_adj.var_i).detach().to(self.device)
+        w_A_det = Variable(state_w_adj.var_i).detach().to(self.device)
 
         #print(u_A_det.size())
         
         # Compute g
         g = ( torch.sum(self.sfsmodel.GX[:,:,:,0]*u_A_det) +
               torch.sum(self.sfsmodel.GY[:,:,:,0]*v_A_det) +
-              torch.sum(self.sfsmodel.GZ[:,:,:,0]*w_A_det) )
+              torch.sum(self.sfsmodel.GZ[:,:,:,0]*w_A_det) ).to(self.device)
 
         #print(g.size())
         

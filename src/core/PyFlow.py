@@ -82,6 +82,13 @@ def run(inputConfig):
 
     if ((decomp.npx>1 and decomp.npy>1) or (decomp.npz>1)):
         inputConfig.plotState = False
+
+    # System type
+    memDiv = 1e6
+    if (sys.platform=="linux"):
+        memDiv = 1e6
+    elif (sys.platform=="darwin"):
+        memDiv = 1e9
     
     # ----------------------------------------------------
     # Generate initial conditions
@@ -457,7 +464,7 @@ def run(inputConfig):
             # Resource utilization
             if (decomp.rank==0):
                 mem_usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-                mem_usage /= 1e9
+                mem_usage /= memDiv
                 print('Done adjoint iteration, peak mem={:7.5f} GB'.format(mem_usage))
                 
             # Reload last checkpointed velocity solution

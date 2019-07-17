@@ -219,7 +219,7 @@ class residual_stress:
             tensor0   = param.grad.data.cpu().numpy()
             tensorAvg = comms.parallel_sum(tensor0.ravel())/float(comms.size)
             tensorOut = torch.tensor(tensorAvg.reshape(np.shape(tensor0)))
-            param.grad.data = tensorOut
+            param.grad.data = tensorOut.to(self.device)
         
         
     # ----------------------------------------------------
