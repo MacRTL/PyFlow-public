@@ -32,6 +32,7 @@
 import numpy as np
 import sys
 import torch
+import os
 
 # Load PyFlow modules
 #
@@ -182,6 +183,21 @@ class Domain:
                 # Set up to use target data
                 self.useTargetData = True
                 self.numItTargetComp = self.numCheckpointIt
+
+                # Check if target data is available
+                startIt = inputConfig.startFileIt
+                stopIt  = startIt + inputConfig.numIt
+                for itCount in range(startIt,stopIt,self.numItTargetComp):
+                    targetDataFileStr = inputConfig.dataFileBStr + \
+                        '{:08d}'.format(itCount)
+                    if (not os.path.exists(targetDataFileStr)):
+                        newNumIt = itCount-self.numItTargetComp
+                        inputConfig.numIt = newNumIt
+                        if (decomp.rank==0):
+                            print('\nCould not find sufficient target files for requested numIt;'+
+                                  ' stopping at it={}'
+                                  .format(newNumIt))
+                        break
 
                 
         # ----------------------------------------------------

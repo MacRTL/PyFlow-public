@@ -184,7 +184,7 @@ def run(inputConfig):
     # Write the stdout header
     if (inputConfig.equationMode=='NS'):
         if (decomp.rank==0):
-            headStr = "  {:10s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}"
+            headStr = "\n  {:10s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}"
             print(headStr.format("Step","Time","max CFL","max U","max V","max W","TKE",
                                  "divergence","max res_P"))
     else:

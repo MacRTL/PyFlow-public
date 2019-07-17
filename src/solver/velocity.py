@@ -354,19 +354,15 @@ class rhs_NavierStokes:
         self.metric.interp_w_zm(state_w)
         self.metric.vel_conv_zz(state_w,state_w,self.rhs_w)
 
-        #print("Done forward visc")
-        #return
-
-    
-    def dont_use(self):
-        print("oops")
-
         
         # Source-type SFS models, including ML models
+        #
         if (self.sfsmodel.modelType=='source'):
             #print("Adding NN")
             # Use interpolated variables
-            #  --> ML model can be improved by using staggered derivatives internally
+            #
+            #  --> ML model can be improved by using staggered
+            #  --> derivatives internally
             self.metric.interp_u_xm( state_u )
             self.metric.interp_v_ym( state_v )
             self.metric.interp_w_zm( state_w )
@@ -385,8 +381,3 @@ class rhs_NavierStokes:
             # z
             self.metric.interp_sc_z( self.sfsmodel.GZ[:,:,:,0], self.interp_SC )
             self.rhs_w.sub_( self.interp_SC[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
-            
-            # Accumulate to RHS   
-            #self.rhs_u.sub_( self.sfsmodel.GX[imin_:imax_,jmin_:jmax_,kmin_:kmax_,0] )
-            #self.rhs_v.sub_( self.sfsmodel.GY[imin_:imax_,jmin_:jmax_,kmin_:kmax_,0] )
-            #self.rhs_w.sub_( self.sfsmodel.GZ[imin_:imax_,jmin_:jmax_,kmin_:kmax_,0] )

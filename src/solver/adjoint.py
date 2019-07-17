@@ -225,16 +225,11 @@ class rhs_adjPredictor:
 
         # 3e : A23( v * w )
         self.metric.adj_conv_3e(state_v_adj,self.state_v,self.rhs_w)
-
-        
-    
-    def dont_use(self):
-        print("oops")
-
         
 
         # Closure model terms -- delta^t
-
+        #
+        #print("Adjoint NN")
         # Use interpolated variables
         #   --> ML model can be improved by using staggered derivatives internally
         self.metric.interp_u_xm( self.state_u )
@@ -289,11 +284,6 @@ class rhs_adjPredictor:
         # z
         self.metric.interp_sc_z( grad_ML3, self.interp_SC )
         self.rhs_w.sub_( self.interp_SC[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
-
-        # Accumulate the AD gradient to the adjoint equation RHS
-        #self.rhs_u.sub_( self.sfsmodel.GX[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
-        #self.rhs_v.sub_( self.sfsmodel.GY[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
-        #self.rhs_w.sub_( self.sfsmodel.GZ[imin_:imax_,jmin_:jmax_,kmin_:kmax_] )
 
         # Clean up
         del g
