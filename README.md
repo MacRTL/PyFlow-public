@@ -22,6 +22,30 @@ conda install scipy
 ```
 
 
+
+## Running PyFlow
+
+The basic PyFlow execution occurs in the `src/core/` directory. Several example driver scripts are available in the repository, the most basic of which configures the solver for a 128^3 isotropic turbulence DNS (`run_PyFlow_example_dnsbox128.py`).
+
+The basic elements of the driver script are
+1. Configure input parameters (`inputConfig`)
+2. Invoke PyFlow via `PyFlow.run(inputConfig)`
+
+Since PyFlow is designed to be scripted by Python, driver scripts can get as fancy as the user wants! The driver script is executed on the command line in serial via
+```
+python <run_PyFlow_script.py>
+```
+or in parallel via
+```
+mpirun -np <NUM_PROC> python <run_PyFlow_script.py>
+```
+
+*NOTE 1:* Out-of-source runs are HIGHLY recommended! This just means setting up your job submission script to copy the PyFlow source tree to the current working directory.
+
+*NOTE 2:* Parallel execution commands might vary system-to-system. If the machine you're using has a site-specific environment configuration, please see the information in the next section.
+
+
+
 ## Machine-specific Environment Setup
 
 The following sub-sections contain site-specific environment setup details.
@@ -45,25 +69,3 @@ Note that the name of the PyFlow driver script, set by the environment variable 
 
 LLNL Lassen is an 795-node IBM machine composed of Power9 CPUs and NVIDIA V100 "Volta" GPUs. Each node contains 44 CPU cores (40 available to the user) and four V100 GPUs. Please contact [Jon MacArt](mailto:jmacart@illinois.edu) for details about running PyFlow on this machine.
 
-
-
-## Running PyFlow
-
-The basic PyFlow execution occurs in the `src/core/` directory. Several example driver scripts are available in the repository, the most basic of which configures the solver for a 128^3 isotropic turbulence DNS (`run_PyFlow_example_dnsbox128.py`).
-
-The basic elements of the driver script are
-1. Configure input parameters (`inputConfig`)
-2. Invoke PyFlow via `PyFlow.run(inputConfig)`
-
-Since PyFlow is designed to be scripted by Python, driver scripts can get as fancy as the user wants! The driver script is executed on the command line in serial via
-```
-python <run_PyFlow_script.py>
-```
-or in parallel via
-```
-mpirun -np <NUM_PROC> python <run_PyFlow_script.py>
-```
-
-*NOTE 1:* Out-of-source runs are HIGHLY recommended! This just means setting up your job submission script to copy the PyFlow source tree to the current working directory.
-
-*NOTE 2:* Parallel execution commands may vary system-to-system. If the machine you're using has a site-specific environment configuration, please see the section above.
