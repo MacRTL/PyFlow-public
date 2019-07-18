@@ -169,7 +169,7 @@ def run(inputConfig):
     # Statistics evaluation
     # ----------------------------------------------------
     advanceSimulation = True
-    computStatsOnly   = False
+    computeStatsOnly   = False
     try:
         computeStatsOnly = inputConfig.computeStatsOnly
         if (computeStatsOnly):
