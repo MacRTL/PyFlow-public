@@ -1,0 +1,75 @@
+#!/bin/bash
+#PBS -lnodes=1:ppn=16:xk,walltime=01:00:00
+#PBS -lgres=shifter16
+#PBS -N PyFlow
+
+# ------------------------------------------------------------
+# User-configurable options
+# ------------------------------------------------------------
+
+# Name of PyFlow driver script
+#
+#   --> NOTE: Needs to match name of driver script in
+#             $PBS_O_WORKDIR/start_PyFlow.sh
+#
+PYFLOW_DRIVER=run_PyFlow_test_ML.py
+
+# ML model name to load in driver script (assumed to be available in PBS_O_WORKDIR)
+ML_MODEL_NAME=LES_model_PyFlow_Adjoint_1024_Lx0_045_NR_Delta16_Down16.dict
+
+# Number of tasks & tasks per node
+#   --> For GPU runs, leave NTASKS_NODE=1
+NTASKS=1
+NTASKS_NODE=1
+
+# Path to PyFlow source code
+PYFLOW_PATH=/projects/sciteam/baxh/PyFlow
+
+
+# ------------------------------------------------------------
+# No user-configurable options below here
+# ------------------------------------------------------------
+
+# Set up PyFlow environment
+cd $PBS_O_WORKDIR
+cp -r ${PYFLOW_PATH}/src .
+cd src/core
+cp ../../${PYFLOW_DRIVER} .
+cp ../../${ML_MODEL_NAME} .
+
+# This is the module setup required to run shifter and 
+# the Cray MPI ABI compatibility layer supporting mpich
+# inside a container
+module unload PrgEnv-cray
+module load PrgEnv-gnu
+module load cudatoolkit
+module load cray-mpich-abi
+module load shifter
+
+# send MY_LD_LIBRARY_PATH into the container
+# /u/staff/arnoldg/pytorch has some symlinks in it to 
+# keep mpich in the container happy with cray-mpich-abi
+export MY_LD_LIBRARY_PATH=\
+/u/staff/arnoldg/pytorch:\
+$(readlink -f /opt/cray/wlm_detect/default/lib64):\
+$(readlink -f /opt/cray/nvidia/default/lib64):\
+/usr/local/cuda/lib64:\
+$LD_LIBRARY_PATH:\
+$CRAY_LD_LIBRARY_PATH
+# send MY_PATH into the container
+export MY_PATH=/usr/local/bin:/root/anaconda3/bin:$PATH
+# send cuda device 0 set at CUDA_VISIBLE_DEVICES into container
+export CUDA_VISIBLE_DEVICES=0
+
+echo "### Running garnoldncsa/centos-pytorch101 container (pytorch1.0.1) ###"
+
+# just change the last line and any aprun options , leave 
+# everything between the double dashes -- shifter ... --
+aprun -b -n $NTASKS -N $NTASKS_NODE\
+  -- shifter \
+  --image=garnoldncsa/centos-pytorch101 \
+  -V /dsl/opt/cray:/opt/cray \
+  -- ${PBS_O_WORKDIR}/start_PyFlow.sh
+
+# Process results
+cd ../..
