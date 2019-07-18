@@ -241,7 +241,23 @@ def run(inputConfig):
         maxCFL = max((maxU/geometry.dx,maxV/geometry.dy,maxW/geometry.dz))*simDt
         lineStr = "  {:10d}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}"
         print(lineStr.format(0,simTime,maxCFL,maxU,maxV,maxW,TKE,maxDivg))
-    
+
+    # Set up the monitor file
+    if (inputConfig.equationMode=='NS' and decomp.rank==0):
+        if (not os.path.exists('monitor')):
+            os.mkdir('monitor')
+        try:
+            caseName = inputConfig.caseName
+        except:
+            caseName = "PyFlow"
+        monitorFileName = "monitor/velocity_"+caseName+".txt"
+        monitorFile     = open(monitorFileName,'w')
+        monitorHeadStr = "  {:10s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s} \n"
+        monitorLineStr = "  {:10d}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}\n"
+        monitorFile.write(monitorHeadStr.format("Step","Time","max CFL","max U","max V","max W","TKE",
+                                                "divergence","max res_P"))
+        monitorFile.write(monitorLineStr.format(0,simTime,maxCFL,maxU,maxV,maxW,TKE,maxDivg))
+            
     # Plot the initial state
     if (inputConfig.plotState):
         timeStr = "{:12.7E}_{}".format(simTime,decomp.rank)
@@ -346,13 +362,18 @@ def run(inputConfig):
             # Write stats
             if (inputConfig.equationMode=='NS'):
                 if (decomp.rank==0):
-                    lineStr = "  {:10d}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}    {:8.3E}"
+                    lineStr = "  {:10d}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}"
                     print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW,
                                          TKE,maxDivg,D.max_resP))
             else:
                 if (decomp.rank==0):
-                    lineStr = "  {:10d}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}"
                     print(lineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW))
+
+            # Write to monitor file
+            if (decomp.rank==0 and inputConfig.equationMode=='NS'):
+                monitorLineStr = "  {:10d}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}\n"
+                monitorFile.write(monitorLineStr.format(itCount,simTime,maxCFL,maxU,maxV,maxW,
+                                                        TKE,maxDivg,D.max_resP))
                     
             # Write output
             if (np.mod(itCount,inputConfig.numItDataOut)==0):
@@ -557,6 +578,9 @@ def run(inputConfig):
             print("it={}, test={:10.5E}, elapsed={}".format(itCount,test,time_elapsed))
             print("Energy initial={:10.5E}, final={:10.5E}, ratio={:10.5E}"
                   .format(initEnergy,finalEnergy,finalEnergy/initEnergy))
+
+    # Close the monitor file
+    monitorFile.close()
             
     if (inputConfig.plotState):
         # Print a pretty picture
