@@ -79,6 +79,7 @@ def run(inputConfig):
     
     # Domain decomposition
     decomp = parallel.decomp(inputConfig,config)
+    numPoints = decomp.nx*decomp.ny*decomp.nz
 
     if ((decomp.npx>1 and decomp.npy>1) or (decomp.npz>1)):
         inputConfig.plotState = False
@@ -427,15 +428,7 @@ def run(inputConfig):
                     print("     L1 error  : {:10.5E}".format(L1_error))
                     
         ## END OF FORWARD INNER LOOP
-                
-
-        # Adjoint verification
-        #   --> Evaluate and print the objective function
-        if (adjointVerification):
-            new_obj  = torch.mean( (D.state_u_P.interior() - 0.0)**2 ).numpy()
-            #new_obj += torch.mean( (D.state_v_P.interior() - 0.0)**2 ).numpy()
-            #new_obj += torch.mean( (D.state_w_P.interior() - 0.0)**2 ).numpy() 
-            print("Objective function: {}".format(new_obj))
+        
         
         
         # ----------------------------------------------------
@@ -444,13 +437,16 @@ def run(inputConfig):
         if (adjointTraining):
             itCountInnerUp = 0
             
-            # Load target state
+            # Pre-adjoint step tasks
             if (adjointVerification):
+                # --> Evaluate and print the objective function
+                new_obj = torch.mean( (D.state_u_P.interior() - 0.0)**2 ).numpy()
+                print("Objective function: {}".format(new_obj))
+
+                # --> Load the target state
                 D.state_u_adj_P.var.copy_( 2.0*(D.state_u_P.var - 0.0) )
                 D.state_v_adj_P.var.copy_( 0.0*(D.state_v_P.var - 0.0) )
                 D.state_w_adj_P.var.copy_( 0.0*(D.state_w_P.var - 0.0) )
-                #D.state_v_adj_P.var.copy_( 2.0*(D.state_v_P.var - 0.0) )
-                #D.state_w_adj_P.var.copy_( 2.0*(D.state_w_P.var - 0.0) )
 
             else:
                 targetDataFileStr = inputConfig.dataFileBStr + \
@@ -461,11 +457,22 @@ def run(inputConfig):
                 D.state_u_adj_P.var.copy_( torch.sign(D.state_u_P.var - D.state_u_T.var) )
                 D.state_v_adj_P.var.copy_( torch.sign(D.state_v_P.var - D.state_v_T.var) )
                 D.state_w_adj_P.var.copy_( torch.sign(D.state_w_P.var - D.state_w_T.var) )
+
+                # Compute the error vs. the target data
+                model_error  = comms.parallel_sum(torch.sum( D.state_u_P.interior() -
+                                                             D.state_u_T.interior() )
+                                                  .numpy()) / float(numPoints)
+                model_error += comms.parallel_sum(torch.sum( D.state_v_P.interior() -
+                                                             D.state_v_T.interior() )
+                                                  .numpy()) / float(numPoints)
+                model_error += comms.parallel_sum(torch.sum( D.state_w_P.interior() -
+                                                             D.state_w_T.interior() )
+                                                  .numpy()) / float(numPoints)
                 
             # Normalize
-            D.state_u_adj_P.var.div_( decomp.nx*decomp.ny*decomp.nz )
-            D.state_v_adj_P.var.div_( decomp.nx*decomp.ny*decomp.nz )
-            D.state_w_adj_P.var.div_( decomp.nx*decomp.ny*decomp.nz )
+            D.state_u_adj_P.var.div_( numPoints )
+            D.state_v_adj_P.var.div_( numPoints )
+            D.state_w_adj_P.var.div_( numPoints )
             
             if (decomp.rank==0):
                 print('Starting adjoint iteration')
@@ -525,9 +532,10 @@ def run(inputConfig):
             if (decomp.rank==0):
                 mem_usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
                 mem_usage /= memDiv
-                print('Done adjoint iteration, peak mem={:7.5f} GB'.format(mem_usage))
+                print('Done adjoint iteration, peak mem={:7.5f} GB, error={:12.5E}'
+                      .format(mem_usage,model_error))
                 
-            # Reload last checkpointed velocity solution
+            # Restore last checkpointed velocity solution
             D.state_u_P.var.copy_( D.check_u_P[:,:,:,numStepsInner] )
             D.state_v_P.var.copy_( D.check_v_P[:,:,:,numStepsInner] )
             D.state_w_P.var.copy_( D.check_w_P[:,:,:,numStepsInner] )

@@ -205,6 +205,7 @@ class residual_stress:
         if (self.saveModel):
             print('Saving model...')
             torch.save(self.model.state_dict(),self.modelDictSave)
+            torch.save(self.optimizer.state_dict(),self.modelDictSave+'_optimizer')
         
         
     # ----------------------------------------------------
@@ -214,12 +215,15 @@ class residual_stress:
         for param in self.model.parameters():
             param.grad.data *= self.simDt
 
-        # Sync the ML model across processes
+        # Sync the ML model across processes (distribute gradients)
         for param in self.model.parameters():
             tensor0   = param.grad.data.cpu().numpy()
             tensorAvg = comms.parallel_sum(tensor0.ravel())/float(comms.size)
             tensorOut = torch.tensor(tensorAvg.reshape(np.shape(tensor0)))
             param.grad.data = tensorOut.to(self.device)
+
+        # Take an optimizer step
+        self.optimizer.step()
         
         
     # ----------------------------------------------------
