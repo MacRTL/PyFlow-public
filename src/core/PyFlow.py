@@ -164,6 +164,27 @@ def run(inputConfig):
         if (decomp.rank==0):
             print("Adjoint verification settings not specified")
 
+
+    # ----------------------------------------------------
+    # Statistics evaluation
+    # ----------------------------------------------------
+    advanceSimulation = True
+    computStatsOnly   = False
+    try:
+        computeStatsOnly = inputConfig.computeStatsOnly
+        if (computeStatsOnly):
+            # Don't advance the simulation; set outer loop to skip
+            # data files as necessary for stats
+            advanceSimulation = False
+            if (decomp.rank==0):
+                print("Computing statistics on input data")
+        else:
+            if (decomp.rank==0):
+                print("Not computing statistics")
+    except:
+        if (decomp.rank==0):
+            print("Statistics settings not specified")
+
         
     # ----------------------------------------------------
     # Pre-simulation monitoring tasks
@@ -237,11 +258,19 @@ def run(inputConfig):
     # Total iteration counter
     itCount = 0
 
+    # Inner loop step size
+    stepSizeInner = 1
+    
     # Configure the main simulation loop
     if (adjointTraining):
         # Adjoint training: divide outer loop into checkpointed inner loops
         numStepsOuter = inputConfig.numIt//D.numCheckpointIt
         numStepsInner = D.numCheckpointIt
+    elif (computeStatsOnly):
+        # Statistics only: read data files in outer loop
+        numStepsOuter = inputConfig.numIt//D.numCheckpointIt
+        numStepsInner = 1
+        stepSizeInner = D.numCheckpointIt
     else:
         # Forward solver only
         numStepsOuter = 1
@@ -258,6 +287,14 @@ def run(inputConfig):
             D.check_u_P[:,:,:,itCountInner].copy_(D.state_u_P.var)
             D.check_v_P[:,:,:,itCountInner].copy_(D.state_v_P.var)
             D.check_w_P[:,:,:,itCountInner].copy_(D.state_w_P.var)
+
+        # Statistics evaluation only
+        #   --> Load the next restart data file
+        if (computeStatsOnly):
+            if (inputConfig.dataFileType=='restart'):
+                fileIt = itCount + stepSizeInner + inputConfig.startFileIt
+                dataFileStr = inputConfig.dataFileBStr + '{:08d}'.format(fileIt)
+                dr.readNGArestart_parallel(dataFileStr,D.data_all_CPU)
     
         # ----------------------------------------------------
         # Forward inner loop
@@ -267,7 +304,8 @@ def run(inputConfig):
             # ----------------------------------------------------
             # Evaluate the forward step
             #
-            D.forwardStep(simDt)
+            if (advanceSimulation):
+                D.forwardStep(simDt)
         
             # ----------------------------------------------------
             # Checkpoint the velocity solution
@@ -281,9 +319,9 @@ def run(inputConfig):
             # Post-step tasks
             #
             # Update the counters
-            itCountInner += 1
-            itCount += 1
-            simTime += simDt
+            itCountInner += stepSizeInner
+            itCount += stepSizeInner
+            simTime += simDt*stepSizeInner
             simTimeCheckpoint = simTime
             
             # Compute stats
@@ -368,9 +406,10 @@ def run(inputConfig):
                     print("     L1 error  : {:10.5E}".format(L1_error))
                     
         ## END OF FORWARD INNER LOOP
+                
 
-
-        # Adjoint verification: print the objective function
+        # Adjoint verification
+        #   --> Evaluate and print the objective function
         if (adjointVerification):
             new_obj  = torch.mean( (D.state_u_P.interior() - 0.0)**2 ).numpy()
             #new_obj += torch.mean( (D.state_v_P.interior() - 0.0)**2 ).numpy()

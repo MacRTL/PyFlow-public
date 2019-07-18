@@ -137,6 +137,13 @@ class Domain:
             adjointTraining = inputConfig.adjointTraining
         except:
             adjointTraining = False
+
+        try:
+            self.numCheckpointIt = inputConfig.numCheckpointIt
+        except:
+            if (adjointTraining):
+                if (decomp.rank==0):
+                    raise Exception("\nAdjoint training requires specification of numCheckpointIt")
             
         if (adjointTraining):
             
@@ -148,7 +155,6 @@ class Domain:
                 if (decomp.rank==0):
                     raise Exception("\nAdjoint training requires Navier-Stokes solver\n")
             else:
-                self.numCheckpointIt = inputConfig.numCheckpointIt
                 
                 # Allocate the adjoint state
                 self.state_u_adj_P = state.state_P(decomp,IC_zeros_np)
