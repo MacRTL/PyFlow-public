@@ -460,13 +460,13 @@ def run(inputConfig):
 
                 # Compute the error vs. the target data
                 model_error  = comms.parallel_sum(torch.sum( D.state_u_P.interior() -
-                                                             D.state_u_T.interior() )
+                                                             D.state_u_T.interior() ).cpu()
                                                   .numpy()) / float(numPoints)
                 model_error += comms.parallel_sum(torch.sum( D.state_v_P.interior() -
-                                                             D.state_v_T.interior() )
+                                                             D.state_v_T.interior() ).cpu()
                                                   .numpy()) / float(numPoints)
                 model_error += comms.parallel_sum(torch.sum( D.state_w_P.interior() -
-                                                             D.state_w_T.interior() )
+                                                             D.state_w_T.interior() ).cpu()
                                                   .numpy()) / float(numPoints)
                 
             # Normalize
