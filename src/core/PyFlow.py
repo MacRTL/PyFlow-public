@@ -530,7 +530,7 @@ def run(inputConfig):
             if (decomp.rank==0):
                 mem_usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
                 mem_usage /= memDiv
-                print('Done adjoint iteration, peak mem={:7.5f} GB, error={:12.5E}'
+                print('Done adjoint iteration, peak mem={:7.5f} GB, training error={:12.5E}'
                       .format(mem_usage,model_error))
                 
             # Restore last checkpointed velocity solution
@@ -581,12 +581,13 @@ def run(inputConfig):
             print(itCount,test,error,time_elapsed)
     else:
         if (decomp.rank==0):
-            print("it={}, test={:10.5E}, elapsed={}".format(itCount,test,time_elapsed))
+            print("\nit={}, test={:10.5E}, elapsed={}".format(itCount,test,time_elapsed))
             print("Energy initial={:10.5E}, final={:10.5E}, ratio={:10.5E}"
                   .format(initEnergy,finalEnergy,finalEnergy/initEnergy))
 
     # Close the monitor file
-    monitorFile.close()
+    if (decomp.rank==0):
+        monitorFile.close()
             
     if (inputConfig.plotState):
         # Print a pretty picture
