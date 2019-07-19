@@ -459,15 +459,15 @@ def run(inputConfig):
                 D.state_w_adj_P.var.copy_( torch.sign(D.state_w_P.var - D.state_w_T.var) )
 
                 # Compute the error vs. the target data
-                model_error  = comms.parallel_sum(torch.sum( D.state_u_P.interior() -
-                                                             D.state_u_T.interior() ).cpu()
-                                                  .numpy()) / float(numPoints)
-                model_error += comms.parallel_sum(torch.sum( D.state_v_P.interior() -
-                                                             D.state_v_T.interior() ).cpu()
-                                                  .numpy()) / float(numPoints)
-                model_error += comms.parallel_sum(torch.sum( D.state_w_P.interior() -
-                                                             D.state_w_T.interior() ).cpu()
-                                                  .numpy()) / float(numPoints)
+                model_error  = comms.parallel_sum(torch.sum(torch.abs( D.state_u_P.interior() -
+                                                                       D.state_u_T.interior() ))
+                                                  .cpu().numpy()) / float(numPoints)
+                model_error += comms.parallel_sum(torch.sum(torch.abs( D.state_v_P.interior() -
+                                                                       D.state_v_T.interior() ))
+                                                  .cpu().numpy()) / float(numPoints)
+                model_error += comms.parallel_sum(torch.sum(torch.abs( D.state_w_P.interior() -
+                                                                       D.state_w_T.interior() ))
+                                                  .cpu().numpy()) / float(numPoints)
                 
             # Normalize
             D.state_u_adj_P.var.div_( numPoints )
@@ -520,13 +520,11 @@ def run(inputConfig):
                 new_adj = D.state_u_adj_P.var[nn,nn,nn].numpy()
                 print("Final adjoint state: {}".format(new_adj))
 
-            # Finalize the ML model and sync across processors
+            # Sync the ML across processors and save to disk
             if (not adjointVerification):
                 D.sfsmodel.finalize(comms)
-            
-            # Write the ML model to disk
-            if (decomp.rank==0 and not adjointVerification):
-                D.sfsmodel.save()
+                if (decomp.rank==0):
+                    D.sfsmodel.save()
             
             # Resource utilization
             if (decomp.rank==0):

@@ -29,6 +29,7 @@
 # 
 # ------------------------------------------------------------------------
 
+import os
 import numpy as np
 import torch
 import torch.nn as nn
@@ -122,7 +123,6 @@ class NeuralNetworkModel2(nn.Module):
 # ----------------------------------------------------
 class residual_stress:
     def __init__(self,inputConfig,decomp,geo):
-        #,loadModel=False,modelDictName=None):
         
         # Default precision and offloading settings
         self.prec = decomp.prec
@@ -159,18 +159,49 @@ class residual_stress:
 
         # Initialize PyTorch model object
         self.model = NeuralNetworkModel2()
+        self.model.to(self.device)
 
-        # Load model
+        # Learning rate and training epoch
+        self.LR    = 0.01
+        self.epoch = 0
+
+        # Optimizer
+        self.optimizer = optim.RMSprop(self.model.parameters(), lr=self.LR)
+
+        # Do we load an existing ML model state?
         try:
             loadModel = inputConfig.loadModel
         except AttributeError:
             loadModel = False
-        try:
-            modelDictName = inputConfig.modelDictName
-        except AttributeError:
-            loadModel = False
+            if (decomp.rank==0):
+                print("\n --> WARNING: ML SFS model configured, but existing model not loaded")
+
+        # If so, load the state
         if (loadModel):
-            self.model.load_state_dict(torch.load(modelDictName))
+            # Get the name
+            try:
+                modelDictName = inputConfig.modelDictName
+            except AttributeError:
+                if (decomp.rank==0):
+                    raise Exception('sfsmodel_ML: must specify modelDictName in inputConfig')
+
+            # Look for the file and load it
+            if os.path.isfile(modelDictName):
+                checkpoint = torch.load(modelDictName)
+                self.epoch = checkpoint['epoch']
+                self.model.load_state_dict(checkpoint['model_state_dict'])
+                self.model.to(self.device)
+                self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+                self.LR = checkpoint['LR']
+                if (decomp.rank==0):
+                    print("\n --> Loaded ML model state {}".format(modelDictName))
+            else:
+                if (decomp.rank==0):
+                    raise Exception("\nML model state {} not found!".format(modelDictName))
+
+        # Print starting model configuration info
+        if (decomp.rank==0):
+            print("\n --> ML model initialized at epoch={}, LR={}".format(self.epoch,self.LR))
 
         # Model save settings
         try:
@@ -180,13 +211,7 @@ class residual_stress:
             self.saveModel = False
 
         # Offload model
-        self.model.to(self.device)
-
-        # Learning rate
-        self.LR = 0.01
-
-        # Optimizer
-        self.optimizer = optim.RMSprop(self.model.parameters(), lr=self.LR)
+        #self.model.to(self.device)
 
         # Normalization ... needs update
         Constant_norm = 10.0*np.array([1.0233662e+00, 1.0241578e+00, 1.0196122e+00, 
@@ -203,9 +228,14 @@ class residual_stress:
     # Save the model
     def save(self):
         if (self.saveModel):
-            print('Saving model...')
-            torch.save(self.model.state_dict(),self.modelDictSave)
-            torch.save(self.optimizer.state_dict(),self.modelDictSave+'_optimizer')
+            print('Saving model at epoch={}, LR={}...'.format(self.epoch,self.LR))
+            state = {'epoch': self.epoch,
+                     'LR': self.LR,
+                     'model_state_dict': self.model.state_dict(),
+                     'optimizer_state_dict': self.optimizer.state_dict(), }
+            torch.save(state,self.modelDictSave)
+            #torch.save(self.model.state_dict(),self.modelDictSave)
+            #torch.save(self.optimizer.state_dict(),self.modelDictSave+'_optimizer')
         
         
     # ----------------------------------------------------
@@ -224,6 +254,13 @@ class residual_stress:
 
         # Take an optimizer step
         self.optimizer.step()
+
+        # Update epoch counter and learning rate
+        self.epoch += 1
+        if ((self.epoch >= 200) and (self.epoch % 250 == 0)):
+            self.LR *= 0.5
+            for param_group in self.optimizer.param_groups:
+                param_group['lr'] = 0.5*param_group['lr']
         
         
     # ----------------------------------------------------
