@@ -210,8 +210,8 @@ class residual_stress:
         except AttributeError:
             self.saveModel = False
 
-        # Offload model
-        #self.model.to(self.device)
+        # Zero the optimizer gradients
+        self.optimizer.zero_grad()
 
         # Normalization ... needs update
         Constant_norm = 10.0*np.array([1.0233662e+00, 1.0241578e+00, 1.0196122e+00, 
@@ -234,8 +234,6 @@ class residual_stress:
                      'model_state_dict': self.model.state_dict(),
                      'optimizer_state_dict': self.optimizer.state_dict(), }
             torch.save(state,self.modelDictSave)
-            #torch.save(self.model.state_dict(),self.modelDictSave)
-            #torch.save(self.optimizer.state_dict(),self.modelDictSave+'_optimizer')
         
         
     # ----------------------------------------------------
@@ -254,6 +252,9 @@ class residual_stress:
 
         # Take an optimizer step
         self.optimizer.step()
+
+        # Zero the optimizer gradients
+        self.optimizer.zero_grad()
 
         # Update epoch counter and learning rate
         self.epoch += 1
