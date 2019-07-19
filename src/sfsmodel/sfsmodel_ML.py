@@ -205,7 +205,7 @@ class residual_stress:
 
         # Model save settings
         try:
-            self.modelDictSave  = inputConfig.modelDictSave
+            self.modelDictSave = inputConfig.modelDictSave
             self.saveModel = True
         except AttributeError:
             self.saveModel = False
