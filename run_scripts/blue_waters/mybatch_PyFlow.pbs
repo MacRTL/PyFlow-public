@@ -1,7 +1,12 @@
 #!/bin/bash
 #PBS -lnodes=1:ppn=16:xk,walltime=01:00:00
 #PBS -lgres=shifter16
+#PBS -v UDI=garnoldncsa/centos-pytorch101
 #PBS -N PyFlow
+#PBS -A baxh
+# sends mail when process ends
+#PBS -m e 
+#PBS -M <username>@illinois.edu
 
 # ------------------------------------------------------------
 # User-configurable options
