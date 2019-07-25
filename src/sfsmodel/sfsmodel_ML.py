@@ -241,7 +241,7 @@ class residual_stress:
     def finalize(self,comms):
         # Multiply neural network accumlulated gradients by LES time step
         for param in self.model.parameters():
-            param.grad.data *= self.simDt
+            param.grad.data *= -self.simDt
 
         # Sync the ML model across processes (distribute gradients)
         for param in self.model.parameters():
