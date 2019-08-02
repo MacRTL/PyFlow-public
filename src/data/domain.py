@@ -288,7 +288,8 @@ class Domain:
                                                     self.adjointRHS)
         # Poisson solver
         if (inputConfig.equationMode=='NS'):
-            self.max_resP = 0.0
+            self.doPressure = True
+            self.max_resP   = 0.0
             
             if (inputConfig.pSolverMode=='Jacobi'):
                 self.poisson = pressure.solver_jacobi(comms,decomp,metric,
@@ -302,6 +303,11 @@ class Domain:
             elif (inputConfig.pSolverMode=='RedBlackGS'):
                 #poisson = pressure.solver_GS_redblack(geometry,rho,simDt,max_pressure_iterations)
                 raise Exception('\nRed-black GS not yet implemented\n')
+            elif (inputConfig.pSolverMode=='none'):
+                self.doPressure=False
+
+        else:
+            self.doPressure = False
 
         
         # ----------------------------------------------------
@@ -342,13 +348,13 @@ class Domain:
         # ----------------------------------------------------
         # Velocity corrector step
         #
-        if (self.equationMode=='NS'):
-        
+        if (self.doPressure):
+            #
             # 1. Currently using Chorin's original fractional step method
             #   (essentially Lie splitting); unclear interpretation of
             #   predictor step RHS w/o pressure. Modern fractional-step
             #   (based on midpoint method) would be better.
-            
+            #
             # 2. Boundary conditions: zero normal gradient. Note: only
             #   satisfies local mass conservation; global mass
             #   conservation needs to be enforced in open systems before
@@ -380,7 +386,7 @@ class Domain:
     # ----------------------------------------------------
     def adjointStep(self,simDt):
 
-        if (True):
+        if (self.doPressure):
             # ----------------------------------------------------
             # Adjoint 'pressure' iteration
             #
@@ -416,7 +422,7 @@ class Domain:
     # ----------------------------------------------------
     def targetDataVelCorr(self,simDt):
 
-        if (True):
+        if (self.doPressure):
             # ----------------------------------------------------
             # Target data 'pressure' iteration
             #
