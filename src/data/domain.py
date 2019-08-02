@@ -408,3 +408,33 @@ class Domain:
         # Adjoint predictor step: \hat{u}^t
         #
         self.adjointAdvancer.step(simDt)
+
+
+
+    # ----------------------------------------------------
+    # Target data velocity corrector
+    # ----------------------------------------------------
+    def targetDataVelCorr(self,simDt):
+
+        if (True):
+            # ----------------------------------------------------
+            # Target data 'pressure' iteration
+            #
+            # Divergence of the target data velocity field
+            self.metric.div_vel(self.state_u_T,self.state_v_T,
+                                self.state_w_T,self.source_P)
+            
+            # Solve the Poisson equation
+            self.max_resP = self.poisson.solve(self.state_DP_P,self.state_p_P,
+                                               self.source_P)
+            
+            # ----------------------------------------------------
+            # Target data corrector step: \hat{u}^T
+            #
+            # Compute 'pressure' gradients
+            self.metric.grad_P(self.state_DP_P)
+            
+            # Update the target data solution
+            self.state_u_T.vel_corr(self.state_DP_P.grad_x, +simDt/self.rho)
+            self.state_v_T.vel_corr(self.state_DP_P.grad_y, +simDt/self.rho)
+            self.state_w_T.vel_corr(self.state_DP_P.grad_z, +simDt/self.rho)

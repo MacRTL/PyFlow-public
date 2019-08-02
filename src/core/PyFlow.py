@@ -452,6 +452,16 @@ def run(inputConfig):
                 targetDataFileStr = inputConfig.dataFileBStr + \
                     '{:08d}'.format(inputConfig.startFileIt+itCount)
                 dr.readNGArestart_parallel(targetDataFileStr,D.target_data_all_CPU)
+
+                # Target data pressure corrector ... controversial
+                #D.targetDataVelCorr(simDt)
+
+                # Compute the target data velocity divergence
+                #metric.div_vel(D.state_u_T,D.state_v_T,D.state_w_T,D.source_P)
+                #maxDivg = comms.parallel_max(torch.max(torch.abs(D.source_P)).cpu().numpy())
+                #if (decomp.rank==0):
+                #    print('Target data vel_div={:8.3E}, res_P={:8.3E}'
+                #          .format(maxDivg,D.max_resP))
             
                 # Set the adjoint initial condition to the mean absolute error
                 D.state_u_adj_P.var.copy_( torch.sign(D.state_u_P.var - D.state_u_T.var) )
