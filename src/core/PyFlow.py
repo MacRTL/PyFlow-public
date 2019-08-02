@@ -265,7 +265,7 @@ def run(inputConfig):
             adjMonitorFileName = "monitor/adjTraining_"+caseName+".txt"
             adjMonitorHeadStr = "  {:10s}   {:9s}   {:9s}   {:9s} \n"
             adjMonitorLineStr = "  {:10d}   {:8.3E}   {:8.3E}   {:8.3E}\n"
-            if (not os.path.exists(adjMonitorFileName)):
+            if (D.sfsmodel.epoch==0 or not os.path.exists(adjMonitorFileName)):
                 adjMonitorFile = open(adjMonitorFileName,'w')
                 adjMonitorFile.write(adjMonitorHeadStr.format("Epoch","TKE","Error","Norm Err"))
             else:
