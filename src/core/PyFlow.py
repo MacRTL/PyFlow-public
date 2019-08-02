@@ -594,6 +594,9 @@ def run(inputConfig):
         timeStr = "{:12.7E}_{}".format(simTime,decomp.rank)
         decomp.plot_fig_root(dr,state_u_P.var,"state_U_"+str(itCount)+"_"+timeStr)
         
+    # Finalize parallel communications
+    comms.finalize()
+        
     # Return data as required
     if (adjointVerification):
         return new_obj,new_adj

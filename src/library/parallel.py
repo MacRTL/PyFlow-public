@@ -39,6 +39,10 @@ from mpi4py import MPI
 # ----------------------------------------------------
 class comms:
     def __init__(self,IC):
+        if (not MPI.Is_initialized()):
+            # Initialize MPI
+            MPI.Init()
+        
         # Get MPI decomposition info
         self.comm = MPI.COMM_WORLD
         self.rank = self.comm.Get_rank()
@@ -49,6 +53,9 @@ class comms:
             self.dtype = IC.dtypeNumpy
         except AttributeError:
             self.dtype = np.float32
+
+    def finalize(self):
+        MPI.Finalize()
 
     def parallel_sum(self,sendBuf):
         if (self.size>1):
