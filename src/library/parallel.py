@@ -283,6 +283,18 @@ class decomp:
         self.jmax_ = self.jmin_+self.ny_-1
         self.kmax_ = self.kmin_+self.nz_-1
 
+
+    # ------------------------------------------------
+    # Destructor
+    def free(self):
+        self.cartCommX.Free()
+        self.cartCommY.Free()
+        self.cartCommZ.Free()
+        self.cartCommXY.Free()
+        self.cartCommXZ.Free()
+        self.cartCommYZ.Free()
+        self.cartComm.Free()
+
         
     # ------------------------------------------------
     # Communicate overlap cells for generic state data

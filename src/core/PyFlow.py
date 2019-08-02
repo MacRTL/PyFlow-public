@@ -243,7 +243,7 @@ def run(inputConfig):
         lineStr = "  {:10d}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}"
         print(lineStr.format(0,simTime,maxCFL,maxU,maxV,maxW,TKE,maxDivg))
 
-    # Set up the monitor file
+    # Set up the monitor files
     if (inputConfig.equationMode=='NS' and decomp.rank==0):
         if (not os.path.exists('monitor')):
             os.mkdir('monitor')
@@ -251,6 +251,7 @@ def run(inputConfig):
             caseName = inputConfig.caseName
         except:
             caseName = "PyFlow"
+        # Velocity file
         monitorFileName = "monitor/velocity_"+caseName+".txt"
         monitorFile     = open(monitorFileName,'w')
         monitorHeadStr = "  {:10s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s}   {:9s} \n"
@@ -258,6 +259,17 @@ def run(inputConfig):
         monitorFile.write(monitorHeadStr.format("Step","Time","max CFL","max U","max V","max W","TKE",
                                                 "divergence","max res_P"))
         monitorFile.write(monitorLineStr.format(0,simTime,maxCFL,maxU,maxV,maxW,TKE,maxDivg))
+
+        # ML model training error
+        if (adjointTraining):
+            adjMonitorFileName = "monitor/adjTraining_"+caseName+".txt"
+            adjMonitorHeadStr = "  {:10s}   {:9s}   {:9s}   {:9s} \n"
+            adjMonitorLineStr = "  {:10d}   {:8.3E}   {:8.3E}   {:8.3E}\n"
+            if (not os.path.exists(adjMonitorFileName)):
+                adjMonitorFile = open(adjMonitorFileName,'w')
+                adjMonitorFile.write(adjMonitorHeadStr.format("Epoch","TKE","Error","Norm Err"))
+            else:
+                adjMonitorFile = open(adjMonitorFileName,'a')
             
     # Plot the initial state
     if (inputConfig.plotState):
@@ -540,8 +552,11 @@ def run(inputConfig):
             if (decomp.rank==0):
                 mem_usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
                 mem_usage /= memDiv
-                print('Done adjoint iteration, peak mem={:7.5f} GB, training error={:12.5E}'
-                      .format(mem_usage,model_error))
+                print('Done adjoint iteration, peak mem={:7.5f} GB, training error={:12.5E}, norm error={:12.5E}'
+                      .format(mem_usage,model_error,model_error/np.sqrt(TKE)))
+                # Write to the file
+                adjMonitorFile.write(adjMonitorLineStr.format( D.sfsmodel.epoch,TKE,model_error,
+                                                               model_error/np.sqrt(TKE) ))
                 
             # Restore last checkpointed velocity solution
             D.state_u_P.var.copy_( D.check_u_P[:,:,:,numStepsInner] )
@@ -598,14 +613,16 @@ def run(inputConfig):
     # Close the monitor file
     if (decomp.rank==0):
         monitorFile.close()
+        if (adjointTraining):
+            adjMonitorFile.close()
             
     if (inputConfig.plotState):
         # Print a pretty picture
         timeStr = "{:12.7E}_{}".format(simTime,decomp.rank)
         decomp.plot_fig_root(dr,state_u_P.var,"state_U_"+str(itCount)+"_"+timeStr)
         
-    # Finalize parallel communications
-    comms.finalize()
+    # Free the sub-communicators
+    decomp.free()
         
     # Return data as required
     if (adjointVerification):
