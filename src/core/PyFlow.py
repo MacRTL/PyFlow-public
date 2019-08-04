@@ -222,9 +222,12 @@ def run(inputConfig):
             print(headStr.format("Step","Time","max CFL","max U","max V","max W"))
 
     # Compute resolved kinetic energy and velocity rms
-    initEnergy = comms.parallel_sum(np.sum( D.data_all_CPU.read(0)**2 +
-                                            D.data_all_CPU.read(1)**2 +
-                                            D.data_all_CPU.read(2)**2 ))
+    TKE = comms.parallel_sum(torch.sum( D.state_u_P.interior()**2 +
+                                        D.state_v_P.interior()**2 +
+                                        D.state_w_P.interior()**2 )
+                             .cpu().numpy()) / float(numPoints) * 0.5
+    initEnergy = TKE
+
     #rmsVel = np.sqrt(initEnergy/decomp.N)
     if (inputConfig.equationMode=='NS'):
         # Compute the initial divergence
@@ -235,9 +238,6 @@ def run(inputConfig):
     maxU = comms.parallel_max(D.data_all_CPU.absmax(0))
     maxV = comms.parallel_max(D.data_all_CPU.absmax(1))
     maxW = comms.parallel_max(D.data_all_CPU.absmax(2))
-    TKE  = comms.parallel_sum(np.sum( D.data_all_CPU.read(0)**2 +
-                                      D.data_all_CPU.read(1)**2 +
-                                      D.data_all_CPU.read(2)**2 ))*0.5/float(decomp.N)
     if (decomp.rank==0):
         maxCFL = max((maxU/geometry.dx,maxV/geometry.dy,maxW/geometry.dz))*simDt
         lineStr = "  {:10d}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}   {:8.3E}"
@@ -363,10 +363,14 @@ def run(inputConfig):
                           viscNu/geometry.dz**2))*simDt
             # This works but won't tell user whether CFL or VNN is limiting
             maxCFL = max((maxCFL,maxVNN))
-            TKE  = comms.parallel_sum(np.sum( D.data_all_CPU.read(0)**2 +
-                                              D.data_all_CPU.read(1)**2 +
-                                              D.data_all_CPU.read(2)**2 )) * \
-                                              0.5/float(decomp.N)
+            #TKE  = comms.parallel_sum(np.sum( D.data_all_CPU.read(0)**2 +
+            #                                  D.data_all_CPU.read(1)**2 +
+            #                                  D.data_all_CPU.read(2)**2 )) * \
+            #                                  0.5/float(decomp.N)
+            TKE = comms.parallel_sum(torch.sum( D.state_u_P.interior()**2 +
+                                                D.state_v_P.interior()**2 +
+                                                D.state_w_P.interior()**2 )
+                                     .cpu().numpy()) / float(numPoints) * 0.5
             if (inputConfig.equationMode=='NS'):
                 # Compute the final divergence
                 metric.div_vel(D.state_u_P,D.state_v_P,D.state_w_P,D.source_P)
@@ -597,9 +601,10 @@ def run(inputConfig):
     test = torch.mean( D.state_u_P.var)
     
     # Compute the final energy
-    finalEnergy = comms.parallel_sum(np.sum( D.data_all_CPU.read(0)**2 +
-                                             D.data_all_CPU.read(1)**2 +
-                                             D.data_all_CPU.read(2)**2 ))*0.5
+    finalEnergy = comms.parallel_sum(torch.sum( D.state_u_P.interior()**2 +
+                                                D.state_v_P.interior()**2 +
+                                                D.state_w_P.interior()**2 )
+                                     .cpu().numpy()) / float(numPoints) * 0.5
     
     if (False): #useTargetData):
         if (decomp.rank==0):
