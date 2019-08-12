@@ -71,9 +71,7 @@ class ClosureModel2(nn.Module):
 
 # Number of hidden units
 H = 200
-
-#num_inputs = 21 + 6*12
-num_inputs = 21 + 12*12
+num_inputs = 21 + 12*21
 
 class NeuralNetworkModel2(nn.Module):
     def __init__(self):
