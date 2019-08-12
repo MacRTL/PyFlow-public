@@ -282,9 +282,11 @@ class residual_stress:
         # Concatenate data for input to ML model
         ML_input_data = torch.stack( (float_u_P, float_v_P, float_w_P,
                                       u_x_P, u_y_P, u_z_P,
-                                      v_x_P, v_y_P, v_z_P, w_x_P, w_y_P, w_z_P,
-                                      u_xx_P, u_yy_P, u_zz_P, v_xx_P, v_yy_P,
-                                      v_zz_P, w_xx_P, w_yy_P, w_zz_P), 3 )
+                                      v_x_P, v_y_P, v_z_P,
+                                      w_x_P, w_y_P, w_z_P,
+                                      u_xx_P, u_yy_P, u_zz_P,
+                                      v_xx_P, v_yy_P, v_zz_P,
+                                      w_xx_P, w_yy_P, w_zz_P), 3 )
         #print(self.GX.size())
         
         # Evaluate the ML model
@@ -377,26 +379,26 @@ class residual_stress:
     def ML_Closure(self,input_data,model_in,Constant_norm_P):
         dx = self.dx
     
-        input_data_xPlus   = torch.cat( (input_data[1:,:,:,0:12], input_data[0:1,:,:,0:12] ), 0 )
-        input_data_xMinus = torch.cat( (input_data[-1:,:,:,0:12], input_data[0:-1,:,:,0:12] ), 0 )
+        input_data_xPlus   = torch.cat( (input_data[1:,:,:,0:21], input_data[0:1,:,:,0:21] ), 0 )
+        input_data_xMinus = torch.cat( (input_data[-1:,:,:,0:21], input_data[0:-1,:,:,0:21] ), 0 )
 
-        input_data_yPlus   = torch.cat( (input_data[:,1:,:,0:12], input_data[:,0:1,:,0:12] ), 1 )
-        input_data_yMinus = torch.cat( (input_data[:,-1:,:,0:12], input_data[:,0:-1,:,0:12] ), 1 ) 
+        input_data_yPlus   = torch.cat( (input_data[:,1:,:,0:21], input_data[:,0:1,:,0:21] ), 1 )
+        input_data_yMinus = torch.cat( (input_data[:,-1:,:,0:21], input_data[:,0:-1,:,0:21] ), 1 ) 
 
-        input_data_zPlus   = torch.cat( (input_data[:,:,1:,0:12], input_data[:,:,0:1,0:12] ), 2 )
-        input_data_zMinus = torch.cat( (input_data[:,:,-1:,0:12], input_data[:,:,0:-1,0:12] ), 2 )
+        input_data_zPlus   = torch.cat( (input_data[:,:,1:,0:21], input_data[:,:,0:1,0:21] ), 2 )
+        input_data_zMinus = torch.cat( (input_data[:,:,-1:,0:21], input_data[:,:,0:-1,0:21] ), 2 )
 
-        input_data_xPlusPlus   = torch.cat( (input_data[2:,:,:,0:12], input_data[0:2,:,:,0:12] ), 0 )
-        input_data_xMinusMinus = torch.cat( (input_data[-2:,:,:,0:12], input_data[0:-2,:,:,0:12] ), 0 ) 
+        input_data_xPlusPlus   = torch.cat( (input_data[2:,:,:,0:21], input_data[0:2,:,:,0:21] ), 0 )
+        input_data_xMinusMinus = torch.cat( (input_data[-2:,:,:,0:21], input_data[0:-2,:,:,0:21] ), 0 ) 
 
-        input_data_yPlusPlus   = torch.cat( (input_data[:,2:,:,0:12], input_data[:,0:2,:,0:12] ), 1 )
-        input_data_yMinusMinus = torch.cat( (input_data[:,-2:,:,0:12], input_data[:,0:-2,:,0:12] ), 1 )     
+        input_data_yPlusPlus   = torch.cat( (input_data[:,2:,:,0:21], input_data[:,0:2,:,0:21] ), 1 )
+        input_data_yMinusMinus = torch.cat( (input_data[:,-2:,:,0:21], input_data[:,0:-2,:,0:21] ), 1 )     
 
-        input_data_zPlusPlus   = torch.cat( (input_data[:,:,2:,0:12], input_data[:,:,0:2,0:12] ), 2 )
-        input_data_zMinusMinus = torch.cat( (input_data[:,:,-2:,0:12], input_data[:,:,0:-2,0:12] ), 2 )    
+        input_data_zPlusPlus   = torch.cat( (input_data[:,:,2:,0:21], input_data[:,:,0:2,0:21] ), 2 )
+        input_data_zMinusMinus = torch.cat( (input_data[:,:,-2:,0:21], input_data[:,:,0:-2,0:21] ), 2 )    
 
 
-        Constant_norm_P22 = Constant_norm_P[0:12]
+        Constant_norm_P22 = Constant_norm_P[0:21]
 
         input_data_total = torch.cat( (input_data/Constant_norm_P,
                                        input_data_xPlus/Constant_norm_P22,
