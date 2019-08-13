@@ -277,6 +277,21 @@ def run(inputConfig):
         # Plot the initial state
         decomp.plot_fig_root(dr,D.state_u_P.var,"state_U_"+str(0)+"_"+timeStr)
 
+    # Testing
+    #print('min u,v,w={}, {}, {}'.format(torch.min(D.state_u_P.interior()),
+    #                                    torch.min(D.state_v_P.interior()),
+    #                                    torch.min(D.state_w_P.interior())))
+    #print('max u,v,w={}, {}, {}'.format(torch.max(D.state_u_P.interior()),
+    #                                    torch.max(D.state_v_P.interior()),
+    #                                    torch.max(D.state_w_P.interior())))
+
+    #a = D.state_u_P.interior().cpu().numpy()
+    #print(a[:46,18,37])
+    #print('argmax u={}'.format(np.unravel_index(np.argmin(a,axis=None), a.shape)))
+    #a = D.state_v_P.interior().cpu().numpy()
+    #print('argmax v={}'.format(np.unravel_index(np.argmin(a,axis=None), a.shape)))
+    #a = D.state_w_P.interior().cpu().numpy()
+    #print('argmax w={}'.format(np.unravel_index(np.argmin(a,axis=None), a.shape)))
     
     # ----------------------------------------------------
     # Main simulation loop
@@ -424,7 +439,7 @@ def run(inputConfig):
                               .format(targetFileIt,simTime_t))
 
                 # Read the target state data
-                #dr.readNGArestart_parallel(targetFileStr,target_data_all_CPU,ivar_read_start=0,nvar_read=3)
+                #dr.readNGArestart_parallel(targetFileStr,target_data_all_CPU,ivar_read_start=0)
                 #names_t,simTime_t,data_t = dr.readNGArestart(targetFileStr,headerOnly=False,printOut=False)
                 #target_data_all_CPU.append(0,data_t[:,:,:,0])
                 
@@ -484,6 +499,26 @@ def run(inputConfig):
                 D.state_v_adj_P.var.copy_( torch.sign(D.state_v_P.var - D.state_v_T.var) )
                 D.state_w_adj_P.var.copy_( torch.sign(D.state_w_P.var - D.state_w_T.var) )
 
+                #print('min T u,v,w={}, {}, {}'.format(torch.min(D.state_u_T.interior()),
+                #                                      torch.min(D.state_v_T.interior()),
+                #                                      torch.min(D.state_w_T.interior())))
+                #print('max T u,v,w={}, {}, {}'.format(torch.max(D.state_u_T.interior()),
+                #                                      torch.max(D.state_v_T.interior()),
+                #                                      torch.max(D.state_w_T.interior())))
+
+                #TKE_T = comms.parallel_sum(torch.sum( D.state_u_T.interior()**2 +
+                #                                      D.state_v_T.interior()**2 +
+                #                                      D.state_w_T.interior()**2 )
+                #                           .cpu().numpy()) / float(numPoints) * 0.5
+                #print('TKE T={}'.format(TKE_T))
+
+                #a = D.state_u_T.interior().cpu().numpy()
+                #print('argmax T u={}'.format(np.unravel_index(np.argmin(a,axis=None), a.shape)))
+                #a = D.state_v_T.interior().cpu().numpy()
+                #print('argmax T v={}'.format(np.unravel_index(np.argmin(a,axis=None), a.shape)))
+                #a = D.state_w_T.interior().cpu().numpy()
+                #print('argmax T w={}'.format(np.unravel_index(np.argmin(a,axis=None), a.shape)))
+
                 # Compute the error vs. the target data
                 model_error  = comms.parallel_sum(torch.sum(torch.abs( D.state_u_P.interior() -
                                                                        D.state_u_T.interior() ))
@@ -494,6 +529,7 @@ def run(inputConfig):
                 model_error += comms.parallel_sum(torch.sum(torch.abs( D.state_w_P.interior() -
                                                                        D.state_w_T.interior() ))
                                                   .cpu().numpy()) / float(numPoints)
+                #print('model_error={}'.format(model_error))
                 
             # Normalize
             D.state_u_adj_P.var.div_( numPoints )

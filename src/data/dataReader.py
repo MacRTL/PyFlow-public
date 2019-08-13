@@ -212,7 +212,11 @@ def writeNGArestart(fName,Data,headerOnly=True):
 # --------------------------------------------------------
 # Read data from a restart format file in parallel
 # --------------------------------------------------------
-def readNGArestart_parallel(fName,data,ivar_read_start=None,nvar_read=None):
+def readNGArestart_parallel(fName,data): #,ivar_read_start=None,nvar_read=None):
+
+    # Indices to read
+    ivar_read_start = data.ivar_read_start
+    nvar_read = data.nvar_read
 
     # Get MPI decomposition info
     comm = MPI.COMM_WORLD
@@ -258,7 +262,7 @@ def readNGArestart_parallel(fName,data,ivar_read_start=None,nvar_read=None):
     if (ivar_read_start==None and nvar_read==None):
         # Read all the data
         ivar_start = 0
-        ivar_end   = data.nvar
+        ivar_end   = data.nvar_all
     elif (ivar_read_start==None):
         # Read a fixed number of fields starting from zero
         ivar_start = 0
@@ -266,7 +270,7 @@ def readNGArestart_parallel(fName,data,ivar_read_start=None,nvar_read=None):
     elif (nvar_read==None):
         # Read all the data starting from ivar_read_start
         ivar_start = ivar_read_start
-        ivar_end   = data.nvar
+        ivar_end   = data.nvar_all
     else:
         # Read just the specified data range
         ivar_start = ivar_read_start
@@ -301,7 +305,11 @@ def readNGArestart_parallel(fName,data,ivar_read_start=None,nvar_read=None):
 # --------------------------------------------------------
 # Write data to a restart format file in parallel
 # --------------------------------------------------------
-def writeNGArestart_parallel(fName,data,ivar_write_start=None,nvar_write=None):
+def writeNGArestart_parallel(fName,data): #,ivar_write_start=None,nvar_write=None):
+
+    # Indices to read
+    ivar_write_start = data.ivar_read_start
+    nvar_write = data.nvar_read
 
     # Get MPI decomposition info
     comm = MPI.COMM_WORLD

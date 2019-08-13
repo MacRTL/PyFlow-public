@@ -66,26 +66,29 @@ class data_all_CPU:
         # Variables
         self.names = names
         self.nvar  = len(names)
+        self.ivar_read_start = 0
+        self.nvar_read = 0
 
         # Sanity check
-        if (len(state_data_all) != self.nvar):
-            raise Exception("\nState: inconsistent state data\n")
+        #if (len(state_data_all) != self.nvar):
+        #    raise Exception("\nState: inconsistent state data\n")
 
         # State data
         self.data = []
         for state in state_data_all:
             self.data.append(state.var[imin_:imax_,jmin_:jmax_,kmin_:kmax_])
+            self.nvar_read += 1
 
     def append(self,ivar,inData):
-        if (ivar<self.nvar):
+        if (ivar<self.nvar_read):
             self.data[ivar].copy_(torch.from_numpy(inData).to(self.device))
 
     def read(self,ivar):
-        if (ivar<self.nvar):
+        if (ivar<self.nvar_read):
             return self.data[ivar].cpu().numpy()
 
     def absmax(self,ivar):
-        if (ivar<self.nvar):
+        if (ivar<self.nvar_read):
             return torch.max(torch.abs(self.data[ivar])).cpu().numpy()
 
 
@@ -145,7 +148,6 @@ class state_P:
     def update_border(self):
         # Update the overlap cells
         self.decomp.communicate_border(self.var)
-        
         
     def update_border_i(self):
         # Update the overlap cells for interpolated data

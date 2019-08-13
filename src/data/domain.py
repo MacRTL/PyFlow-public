@@ -109,7 +109,7 @@ class Domain:
         self.state_data_all = (self.state_u_P, self.state_v_P,
                                self.state_w_P, self.state_p_P)
         self.data_all_CPU   = state.data_all_CPU(decomp,startTime,simDt,
-                                            names[0:4],self.state_data_all)
+                                            names,self.state_data_all)
         
         # Allocate a temporary velocity state for RK solvers
         if (inputConfig.advancerName[:-1]=="RK"):
@@ -215,7 +215,7 @@ class Domain:
             
             #  Set up a Numpy mirror to the target state data
             self.target_data_all = (self.state_u_T, self.state_v_T, self.state_w_T)
-            self.target_data_all_CPU = state.data_all_CPU(decomp,startTime,simDt,names[0:3],
+            self.target_data_all_CPU = state.data_all_CPU(decomp,startTime,simDt,names,
                                                           self.target_data_all)
 
             # Read the target data file
