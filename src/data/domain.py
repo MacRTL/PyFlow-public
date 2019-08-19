@@ -286,6 +286,9 @@ class Domain:
                                                     self.state_v_adj_P,self.state_vTmp_adj_P,
                                                     self.state_w_adj_P,self.state_wTmp_adj_P,
                                                     self.adjointRHS)
+        else:
+            raise Exception('\n Advancer type '+inputConfig.advancerName+' unknown! Options are Euler and RK4.')
+
         # Poisson solver
         if (inputConfig.equationMode=='NS'):
             self.doPressure = True

@@ -197,9 +197,15 @@ class residual_stress:
                 if (decomp.rank==0):
                     raise Exception("\nML model state {} not found!".format(modelDictName))
 
-        # Print starting model configuration info
-        if (decomp.rank==0):
-            print("\n --> ML model initialized at epoch={}, LR={}".format(self.epoch,self.LR))
+        # Look for user-specified learning rate in inputConfig
+        try:
+            self.LR = inputConfig.LR
+            if (decomp.rank==0):
+                print("\n --> ML model initialized at epoch={}, override LR={}".format(self.epoch,self.LR))
+        except AttributeError:
+            # Print starting model configuration info
+            if (decomp.rank==0):
+                print("\n --> ML model initialized at epoch={}, LR={}".format(self.epoch,self.LR))
 
         # Model save settings
         try:
@@ -256,7 +262,7 @@ class residual_stress:
 
         # Update epoch counter and learning rate
         self.epoch += 1
-        if ((self.epoch >= 200) and (self.epoch % 250 == 0)):
+        if ((self.epoch >= 2000) and (self.epoch % 2500 == 0)):
             self.LR *= 0.5
             for param_group in self.optimizer.param_groups:
                 param_group['lr'] = 0.5*param_group['lr']
