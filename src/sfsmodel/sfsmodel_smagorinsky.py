@@ -38,7 +38,6 @@ import torch
 # ----------------------------------------------------
 class stress_constCs:
     def __init__(self,inputConfig,geo):
-        #,CsIn=0.18,expFilterFacIn=1.0):
 
         # External model type identifier
         self.modelType = 'eddyVisc'
@@ -70,15 +69,18 @@ class stress_constCs:
         metric.grad_vel_center(state_v,'v')
         metric.grad_vel_center(state_w,'w')
 
+        # Divergence
+        divOver3 = (state_u.grad_x + state_v.grad_y + state_w.grad_z)/3.0
+
         # Filtered strain rate magnitude
-        S_11 = state_u.grad_x
-        S_22 = state_v.grad_y
-        S_33 = state_w.grad_z
+        S_11 = state_u.grad_x - divOver3
+        S_22 = state_v.grad_y - divOver3
+        S_33 = state_w.grad_z - divOver3
         S_12 = 0.5*(state_u.grad_y + state_v.grad_x)
         S_13 = 0.5*(state_u.grad_z + state_w.grad_x)
         S_23 = 0.5*(state_v.grad_z + state_w.grad_y)
-        S_mag = torch.sqrt(2.0*( S_11*S_11 + S_22*S_22 + S_33*S_33 +
-                                 2.0*(S_12*S_12 + S_13*S_13  + S_23*S_23) ))
+        S_mag = torch.sqrt( S_11*S_11 + S_22*S_22 + S_33*S_33 +
+                            2.0*(S_12*S_12 + S_13*S_13  + S_23*S_23) )
         
         # Eddy viscosity
         mu_t = rho * (self.Cs*self.Delta)**2 * S_mag
