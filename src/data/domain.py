@@ -291,6 +291,11 @@ class Domain:
 
         # Poisson solver
         if (inputConfig.equationMode=='NS'):
+            try:
+                self.targetDataVelCorr = inputConfig.targetDataVelCorr
+            except:
+                self.targetDataVelCorr = False
+
             self.doPressure = True
             self.max_resP   = 0.0
             
@@ -308,6 +313,13 @@ class Domain:
                 raise Exception('\nRed-black GS not yet implemented\n')
             elif (inputConfig.pSolverMode=='none'):
                 self.doPressure=False
+
+                if (self.targetDataVelCorr):
+                    # Construct a bicgstab solver for target data pressure correction
+                    self.poisson = pressure.solver_bicgstab(comms,decomp,metric,geometry,
+                                                            inputConfig.rho,simDt,
+                                                            inputConfig.min_pressure_residual,
+                                                            inputConfig.max_pressure_iterations)
 
         else:
             self.doPressure = False
@@ -423,9 +435,9 @@ class Domain:
     # ----------------------------------------------------
     # Target data velocity corrector
     # ----------------------------------------------------
-    def targetDataVelCorr(self,simDt):
+    def TargetDataVelCorr(self,simDt):
 
-        if (self.doPressure):
+        if (self.targetDataVelCorr):
             # ----------------------------------------------------
             # Target data 'pressure' iteration
             #

@@ -484,15 +484,30 @@ def run(inputConfig):
                     '{:08d}'.format(inputConfig.startFileIt+itCount)
                 dr.readNGArestart_parallel(targetDataFileStr,D.target_data_all_CPU)
 
-                # Target data pressure corrector ... controversial
-                #D.targetDataVelCorr(simDt)
+                # Compute the target data velocity TKE and divergence
+                target_TKE = comms.parallel_sum(torch.sum( D.state_u_T.interior()**2 +
+                                                           D.state_v_T.interior()**2 +
+                                                           D.state_w_T.interior()**2 )
+                                                .cpu().numpy()) / float(numPoints) * 0.5
+                metric.div_vel(D.state_u_T,D.state_v_T,D.state_w_T,D.source_P)
+                maxDivg = comms.parallel_max(torch.max(torch.abs(D.source_P)).cpu().numpy())
+                if (decomp.rank==0):
+                    print('Target data initial TKE={:8.3E}, vel_div={:8.3E}'
+                          .format(target_TKE,maxDivg))
 
-                # Compute the target data velocity divergence
-                #metric.div_vel(D.state_u_T,D.state_v_T,D.state_w_T,D.source_P)
-                #maxDivg = comms.parallel_max(torch.max(torch.abs(D.source_P)).cpu().numpy())
-                #if (decomp.rank==0):
-                #    print('Target data vel_div={:8.3E}, res_P={:8.3E}'
-                #          .format(maxDivg,D.max_resP))
+                # Target data pressure corrector ... enabled in input file
+                D.TargetDataVelCorr(simDt)
+
+                # Compute the target data TKE velocity divergence
+                target_TKE = comms.parallel_sum(torch.sum( D.state_u_T.interior()**2 +
+                                                           D.state_v_T.interior()**2 +
+                                                           D.state_w_T.interior()**2 )
+                                                .cpu().numpy()) / float(numPoints) * 0.5
+                metric.div_vel(D.state_u_T,D.state_v_T,D.state_w_T,D.source_P)
+                maxDivg = comms.parallel_max(torch.max(torch.abs(D.source_P)).cpu().numpy())
+                if (decomp.rank==0):
+                    print('Target data final   TKE={:8.3E}, vel_div={:8.3E}, res_P={:8.3E}'
+                          .format(target_TKE,maxDivg,D.max_resP))
             
                 # Set the adjoint initial condition to the mean absolute error
                 D.state_u_adj_P.var.copy_( torch.sign(D.state_u_P.var - D.state_u_T.var) )
@@ -593,10 +608,10 @@ def run(inputConfig):
                 mem_usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
                 mem_usage /= memDiv
                 print('Done adjoint iteration, peak mem={:7.5f} GB, training error={:12.5E}, norm error={:12.5E}'
-                      .format(mem_usage,model_error,model_error/np.sqrt(TKE)))
+                      .format(mem_usage,model_error,model_error/np.sqrt(target_TKE)))
                 # Write to the file
                 adjMonitorFile.write(adjMonitorLineStr.format( D.sfsmodel.epoch,TKE,model_error,
-                                                               model_error/np.sqrt(TKE) ))
+                                                               model_error/np.sqrt(target_TKE) ))
                 
             # Restore last checkpointed velocity solution
             D.state_u_P.var.copy_( D.check_u_P[:,:,:,numStepsInner] )
