@@ -807,6 +807,9 @@ class metric_uniform:
 class metric_nonuniform_xy:
     def __init__(self,geo):
 
+        prec = geo.prec
+        device = geo.device
+
         # Local data sizes and indices
         nx_ = geo.nx_
         ny_ = geo.ny_
@@ -823,16 +826,16 @@ class metric_nonuniform_xy:
         
         # Initialize the grid metrics
         self.grid_geo = geo.type
-        if (self.grid_geo=='uniform'):
-            self.div_x  = 1.0*geo.dxi
-            self.div_y  = 1.0*geo.dyi
-            self.div_z  = 1.0*geo.dzi
-            self.grad_x  = 1.0*geo.dxi
-            self.grad_y  = 1.0*geo.dyi
-            self.grad_z  = 1.0*geo.dzi
-            self.grad_xm = 1.0*geo.dxi
-            self.grad_ym = 1.0*geo.dyi
-            self.grad_zm = 1.0*geo.dzi
+        if (self.grid_geo=='nonuniform'):
+            self.div_x     = torch.zeros(nx_,ny_,2,dtype=prec).to(device)
+            self.div_y     = 1.0*geo.dyi
+            self.div_z     = 1.0*geo.dzi
+            self.grad_x    = 1.0*geo.dxi
+            self.grad_y    = 1.0*geo.dyi
+            self.grad_z    = 1.0*geo.dzi
+            self.grad_xm   = 1.0*geo.dxi
+            self.grad_ym   = 1.0*geo.dyi
+            self.grad_zm   = 1.0*geo.dzi
             self.interp_x  = 0.5
             self.interp_y  = 0.5
             self.interp_z  = 0.5

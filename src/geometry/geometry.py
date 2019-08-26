@@ -114,3 +114,50 @@ class uniform:
         self.imin_ = decomp.imin_; self.imax_ = decomp.imax_
         self.jmin_ = decomp.jmin_; self.jmax_ = decomp.jmax_
         self.kmin_ = decomp.kmin_; self.kmax_ = decomp.kmax_
+
+                
+
+# ----------------------------------------------------
+# General nonuniform geometry
+# ----------------------------------------------------
+class nonuniform:
+    def __init__(self,xGrid,yGrid,zGrid,decomp):
+        # Type identifier
+        self.type = 'nonuniform'
+
+        # Offloading settings
+        self.device = decomp.device
+
+        # Precision - default: 32-bit floating-point precision
+        self.prec = decomp.prec
+        self.dtypeNumpy = decomp.dtypeNumpy
+        
+        # Global grid sizes
+        self.Nx = len(xGrid)-1
+        self.Ny = len(yGrid)-1
+        self.Nz = len(zGrid)-1
+
+        self.Lx = xGrid[-1]-xGrid[0]
+        self.Ly = yGrid[-1]-yGrid[0]
+        self.Lz = zGrid[-1]-zGrid[0]
+
+        self.dx = self.Lx/float(self.Nx); self.dxi = 1.0/self.dx
+        self.dy = self.Ly/float(self.Ny); self.dyi = 1.0/self.dy
+        self.dz = self.Lz/float(self.Nz); self.dzi = 1.0/self.dz
+
+        # Local overlap cells for 2CD staggered schemes
+        self.nover  = decomp.nover
+        self.nxo_   = decomp.nxo_; self.nx_ = decomp.nx_
+        self.nyo_   = decomp.nyo_; self.ny_ = decomp.ny_
+        self.nzo_   = decomp.nzo_; self.nz_ = decomp.nz_
+        self.imino_ = decomp.imino_
+        self.jmino_ = decomp.jmino_
+        self.kmino_ = decomp.kmino_
+        self.imaxo_ = decomp.imaxo_
+        self.jmaxo_ = decomp.jmaxo_
+        self.kmaxo_ = decomp.kmaxo_
+
+        # Local grid indices
+        self.imin_ = decomp.imin_; self.imax_ = decomp.imax_
+        self.jmin_ = decomp.jmin_; self.jmax_ = decomp.jmax_
+        self.kmin_ = decomp.kmin_; self.kmax_ = decomp.kmax_
