@@ -364,35 +364,42 @@ class Domain:
         # Velocity corrector step
         #
         if (self.doPressure):
-            #
-            # 1. Currently using Chorin's original fractional step method
-            #   (essentially Lie splitting); unclear interpretation of
-            #   predictor step RHS w/o pressure. Modern fractional-step
-            #   (based on midpoint method) would be better.
-            #
-            # 2. Boundary conditions: zero normal gradient. Note: only
-            #   satisfies local mass conservation; global mass
-            #   conservation needs to be enforced in open systems before
-            #   solving Poisson equation, e.g., by rescaling source_P.
-            
-            # Divergence of the predicted velocity field
-            self.metric.div_vel(self.state_u_P,self.state_v_P,
-                                self.state_w_P,self.source_P)
-            
-            # Integral of the Poisson eqn RHS
+            self.velCorr(simDt)
+
+
+    # ----------------------------------------------------
+    # Velocity corrector
+    # ----------------------------------------------------
+    def velCorr(self,simDt):
+        #
+        # 1. Currently using Chorin's original fractional step method
+        #   (essentially Lie splitting); unclear interpretation of
+        #   predictor step RHS w/o pressure. Modern fractional-step
+        #   (based on midpoint method) would be better.
+        #
+        # 2. Boundary conditions: zero normal gradient. Note: only
+        #   satisfies local mass conservation; global mass
+        #   conservation needs to be enforced in open systems before
+        #   solving Poisson equation, e.g., by rescaling source_P.
+        
+        # Divergence of the predicted velocity field
+        self.metric.div_vel(self.state_u_P,self.state_v_P,
+                            self.state_w_P,self.source_P)
+        
+        # Integral of the Poisson eqn RHS
             #int_RP = comms.parallel_sum(torch.sum(source_P).cpu().numpy())
-
-            # Solve the Poisson equation
-            self.max_resP = self.poisson.solve(self.state_DP_P,self.state_p_P,
-                                               self.source_P)
-
-            # Compute pressure gradients
-            self.metric.grad_P(self.state_DP_P)
-
-            # Update the velocity correction
-            self.state_u_P.vel_corr(self.state_DP_P.grad_x,simDt/self.rho)
-            self.state_v_P.vel_corr(self.state_DP_P.grad_y,simDt/self.rho)
-            self.state_w_P.vel_corr(self.state_DP_P.grad_z,simDt/self.rho)
+        
+        # Solve the Poisson equation
+        self.max_resP = self.poisson.solve(self.state_DP_P,self.state_p_P,
+                                           self.source_P)
+        
+        # Compute pressure gradients
+        self.metric.grad_P(self.state_DP_P)
+        
+        # Update the velocity correction
+        self.state_u_P.vel_corr(self.state_DP_P.grad_x,simDt/self.rho)
+        self.state_v_P.vel_corr(self.state_DP_P.grad_y,simDt/self.rho)
+        self.state_w_P.vel_corr(self.state_DP_P.grad_z,simDt/self.rho)
 
             
 

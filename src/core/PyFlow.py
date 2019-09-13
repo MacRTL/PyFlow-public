@@ -170,15 +170,19 @@ def run(inputConfig):
     # Statistics evaluation
     # ----------------------------------------------------
     advanceSimulation = True
-    computeStatsOnly   = False
+    computeStatsOnly  = False
     try:
         computeStatsOnly = inputConfig.computeStatsOnly
         if (computeStatsOnly):
             # Don't advance the simulation; set outer loop to skip
             # data files as necessary for stats
             advanceSimulation = False
+            try:
+                statDataVelCorr = inputConfig.statDataVelCorr
+            except:
+                statDataVelCorr = False
             if (decomp.rank==0):
-                print("Computing statistics on input data")
+                print("Computing statistics on input data; statDataVelCorr={}".format(statDataVelCorr))
         else:
             if (decomp.rank==0):
                 print("Not computing statistics")
@@ -339,6 +343,10 @@ def run(inputConfig):
                 fileIt = itCount + stepSizeInner + inputConfig.startFileIt
                 dataFileStr = inputConfig.dataFileBStr + '{:08d}'.format(fileIt)
                 dr.readNGArestart_parallel(dataFileStr,D.data_all_CPU)
+                # Enforce continuity
+                if (statDataVelCorr):
+                    D.velCorr(simDt)
+                
     
         # ----------------------------------------------------
         # Forward inner loop
