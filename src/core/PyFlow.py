@@ -100,7 +100,7 @@ def run(inputConfig):
     # ----------------------------------------------------
     # Configure geometry and metrics
     # ----------------------------------------------------
-    geometry = geo.uniform(xGrid,yGrid,zGrid,decomp)
+    geometry = geo.Geometry_Base(inputConfig,xGrid,yGrid,zGrid,decomp)
     metric   = metric_staggered.metric_uniform(geometry)
     
     # ----------------------------------------------------
