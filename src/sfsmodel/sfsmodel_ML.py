@@ -166,6 +166,10 @@ class residual_stress:
         # Optimizer
         self.optimizer = optim.RMSprop(self.model.parameters(), lr=self.LR)
 
+        # Initialize lists for saved and averaged model parameters
+        self.outParamsList = [] # Copy of most recent averaged parameters
+        self.sumParamsList = [] # Running average
+
         # Do we load an existing ML model state?
         try:
             loadModel = inputConfig.loadModel
@@ -191,6 +195,14 @@ class residual_stress:
                 self.model.to(self.device)
                 self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
                 self.LR = checkpoint['LR']
+                # For gradient averaging/distribution
+                try:
+                    self.outParamsList = checkpoint['outParamsList']
+                    self.sumParamsList = checkpoint['sumParamsList']
+                except:
+                    if (decomp.rank==0):
+                        print(" --> Warning: using old-style model dict")
+
                 if (decomp.rank==0):
                     print("\n --> Loaded ML model state {}".format(modelDictName))
             else:
@@ -201,17 +213,40 @@ class residual_stress:
         try:
             self.LR = inputConfig.LR
             if (decomp.rank==0):
-                print("\n --> ML model initialized at epoch={}, override LR={}".format(self.epoch,self.LR))
+                print(" --> ML model initialized at epoch={}, override LR={}".format(self.epoch,self.LR))
         except AttributeError:
             # Print starting model configuration info
             if (decomp.rank==0):
-                print("\n --> ML model initialized at epoch={}, LR={}".format(self.epoch,self.LR))
+                print(" --> ML model initialized at epoch={}, LR={}".format(self.epoch,self.LR))
 
         # Model save settings
         try:
+            # Okay, we're saving the model, so we need to look for a few more settings
             self.modelDictSave = inputConfig.modelDictSave
             self.saveModel = True
+
+            # Look for user-specified learning rate decay
+            try:
+                self.LR_decay = int(inputConfig.LR_decay)
+                if (decomp.rank==0):
+                    print(" --> ML model using user-specified LR decay: {} iterations".format(self.LR_decay))
+            except AttributeError:
+                # Default to decay every 2500 iterations
+                self.LR_decay = 2500
+                if (decomp.rank==0):
+                    print(" --> ML model using default LR decay: {} iterations".format(self.LR_decay))
+
+            # Distributed training settings
+            try:
+                self.numSumDistr = inputConfig.numSumDistr
+            except AttributeError:
+                # Default to average over 8 iterations
+                self.numSumDistr = 8
+            if (decomp.rank==0):
+                print(" --> ML model distributing over {} training iterations".format(self.numSumDistr))
+
         except AttributeError:
+            # Not saving the models
             self.saveModel = False
 
         # Zero the optimizer gradients
@@ -236,7 +271,9 @@ class residual_stress:
             state = {'epoch': self.epoch,
                      'LR': self.LR,
                      'model_state_dict': self.model.state_dict(),
-                     'optimizer_state_dict': self.optimizer.state_dict(), }
+                     'optimizer_state_dict': self.optimizer.state_dict(), 
+                     'outParamsList': self.outParamsList,
+                     'sumParamsList': self.sumParamsList, }
             torch.save(state,self.modelDictSave)
         
         
@@ -246,13 +283,53 @@ class residual_stress:
         # Multiply neural network accumlulated gradients by LES time step
         for param in self.model.parameters():
             param.grad.data *= -self.simDt
-
+            
         # Sync the ML model across processes (distribute gradients)
+        #for param in self.model.parameters():
+        #    tensor0   = param.grad.data.cpu().numpy()
+        #    tensorAvg = comms.parallel_sum(tensor0.ravel())/float(comms.size)
+        #    tensorOut = torch.tensor(tensorAvg.reshape(np.shape(tensor0)))
+        #    param.grad.data = tensorOut.to(self.device)
+
+        # JFM switch this to average over 8 training iterations
+        if (self.epoch == 0):
+            for param in self.model.parameters():
+                tensor0 = param.grad.data.cpu().numpy()
+                self.outParamsList.append(0.0*tensor0)
+                self.sumParamsList.append(0.0*tensor0)
+
+        # Accumulate this iteration's model parameters to the running average
+        ii = 0
         for param in self.model.parameters():
-            tensor0   = param.grad.data.cpu().numpy()
-            tensorAvg = comms.parallel_sum(tensor0.ravel())/float(comms.size)
-            tensorOut = torch.tensor(tensorAvg.reshape(np.shape(tensor0)))
+            tensor0 = param.grad.data.cpu().numpy()
+            self.sumParamsList[ii] += tensor0
+            ii += 1
+
+        # Compute the average
+        if ((self.epoch + 1) % self.numSumDistr == 0):
+            print('Averaging gradients...')
+            ii = 0
+            for param in self.model.parameters():
+                # Finalize the average
+                avgParam = self.sumParamsList[ii] / float(self.numSumDistr)
+
+                # Save the average
+                self.outParamsList[ii] = avgParam
+
+                # Reset the average
+                self.sumParamsList[ii] = 0.0*avgParam
+
+                # Increment the count
+                ii += 1
+
+        # Distribute the saved, averaged gradients
+        ii = 0
+        for param in self.model.parameters():
+            tensor0 = param.grad.data.cpu().numpy()
+            avgParam = self.outParamsList[ii]
+            tensorOut = torch.tensor(avgParam.reshape(np.shape(tensor0)))
             param.grad.data = tensorOut.to(self.device)
+            ii += 1
 
         # Take an optimizer step
         self.optimizer.step()
@@ -262,7 +339,7 @@ class residual_stress:
 
         # Update epoch counter and learning rate
         self.epoch += 1
-        if ((self.epoch >= 2000) and (self.epoch % 2500 == 0)):
+        if ((self.epoch >= 4*self.LR_decay//5) and (self.epoch % self.LR_decay == 0)):
             self.LR *= 0.5
             for param_group in self.optimizer.param_groups:
                 param_group['lr'] = 0.5*param_group['lr']
