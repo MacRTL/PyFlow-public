@@ -125,6 +125,8 @@ class residual_stress:
         # Default precision and offloading settings
         self.prec = decomp.prec
         self.device = decomp.device
+        self.comm = decomp.comm
+        self.rank = decomp.rank
 
         # External model type identifier
         self.modelType = 'source'
@@ -307,11 +309,13 @@ class residual_stress:
 
         # Compute the average
         if ((self.epoch + 1) % self.numSumDistr == 0):
-            print('Averaging gradients...')
+            if (self.rank==0):
+                print('Averaging gradients...')
             ii = 0
             for param in self.model.parameters():
-                # Finalize the average
-                avgParam = self.sumParamsList[ii] / float(self.numSumDistr)
+                # Finalize the average: MPI parallel sum
+                sumParamAll = comms.parallel_sum(self.sumParamsList[ii])
+                avgParam = sumParamAll / float(self.numSumDistr * comms.size)
 
                 # Save the average
                 self.outParamsList[ii] = avgParam
