@@ -7,7 +7,7 @@ Welcome to the PyFlow README! This page contains basic installation instructions
 
 A generic environment is the best starting point for using PyFlow on a personal machine. For larger runs, machine-specific environments are described below.
 
-Anaconda is the recommended Python package manager for generic PyFlow environments. You'll need to instal Anaconda first; full instructions for the platform of your choice may be found [on the web](https://www.anaconda.com/distribution/). Please configure Anaconda to use the latest Python 3.x distribution.
+Anaconda is the recommended Python package manager for generic PyFlow environments. You'll need to install Anaconda first; full instructions for the platform of your choice may be found [on the web](https://www.anaconda.com/distribution/). Please configure Anaconda to use the latest Python 3.x distribution.
 
 
 After installing Anaconda, create a PyFlow-specific environment:
@@ -28,22 +28,20 @@ conda install scipy
 
 ## Running PyFlow
 
-PyFlow contains a heierarchy of modules structured around the main function `PyFlow.run()`. Python-based driver scripts configure and invoke each instance of PyFlow. In certain advanced cases, PyFlow calls back to the driver script during the simulation, *e.g.*, to retrieve the name of a target data file.
+PyFlow contains a hierarchy of modules structured around the main function `PyFlow.run()`. Python-based driver scripts configure and invoke each instance of PyFlow. In certain advanced cases, PyFlow calls back to the driver script during the simulation, *e.g.*, to retrieve the name of target data files during adjoint-based model training.
 
 The basic tasks the driver script performs are:
 
-1. Create an object containing input parameters (`inputConfig`)
+1. Create an object containing input parameters and functions (`inputConfig`)
 2. Invoke PyFlow via `PyFlow.run(inputConfig)`
+3. Process PyFlow return data (if applicable)
 
 Several example driver scripts are available in the repository:
 
 1. DNS of decaying isotropic turbulence on a 128^3 mesh (`run_PyFlow_example_dnsbox128.py`)
-2. Adjoint training for LES of decaying isotropic turbulence on a 64^3 mesh, downsampled from 1024^3 DNS data (`run_PyFlow_adjoint_training.py`)
+2. Adjoint-based model training for LES of decaying isotropic turbulence on a 64^3 mesh, downsampled from 1024^3 DNS data (`run_PyFlow_adjoint_training.py`)
 
-Each of these example cases contains a companion shell script `start_PyFlow.sh` that sets up an out-of-source run environment. Out-of-source runs are **highly** recommended -- at least until we set up PyFlow as a packaged Python project. ;)
-
-The example shell scripts can be invoked using `source start_PyFlow.sh`.
-
+Each of these example cases contains a companion shell script `start_PyFlow.sh` that sets up an out-of-source run environment and invokes the driver script. The example shell scripts can be invoked using `source start_PyFlow.sh`. Out-of-source runs are **highly** recommended -- at least until we get PyFlow packaged as a Python project. ;)
 
 Since PyFlow is designed to be scripted by Python, driver scripts can get as fancy as the user wants! In general, a driver script is executed on the command line in serial via
 ```
@@ -82,5 +80,5 @@ Note that the name of the PyFlow driver script, set by the environment variable 
 
 ### Lassen (LLNL)
 
-LLNL Lassen is an 795-node IBM machine composed of Power9 CPUs and NVIDIA V100 "Volta" GPUs. Each node contains 44 CPU cores (40 available to the user) and four V100 GPUs. Please contact [Jon MacArt](mailto:jmacart@illinois.edu) for details about running PyFlow on this machine.
+LLNL Lassen is an 795-node IBM machine composed of Power9 CPUs and Nvidia V100 "Volta" GPUs. Each node contains 44 CPU cores (40 available to the user) and four V100 GPUs. Please contact [Jon MacArt](mailto:jmacart@illinois.edu) about running PyFlow on this machine.
 
