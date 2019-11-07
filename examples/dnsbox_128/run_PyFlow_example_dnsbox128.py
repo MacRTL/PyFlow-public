@@ -46,14 +46,13 @@ class inputConfigClass:
         self.configName = "restart"
         
         # Example case in git repository
-        inFileDir     = '../../examples/'
+        inFileDir     = '../../restart/'
         self.configFileStr = inFileDir+'config_dnsbox_128_Lx0.0056'
-        self.dataFileBStr  = inFileDir+'dnsbox_128_128_Lx0.0056.1_2.50000E-04'
         self.dataFileStr   = inFileDir+'data_dnsbox_128_Lx0.0056.1_2.50000E-04'
         self.dataFileType  = 'restart'
         
         # Data file to write
-        self.fNameOut     = 'data_dnsbox_128_Lx0.0056'
+        self.fNameOut     = 'data_dnsbox_128_Lx0.0056.2'
         self.numItDataOut = 20
 
         # Parallel decomposition
@@ -62,6 +61,8 @@ class inputConfigClass:
         self.nproc_z = 1
 
         # Physical constants
+        #   mu : dynamic viscosity [Pa*s]
+        #  rho : mass density [kg/m^3]
         self.mu  = 1.8678e-5
         self.rho = 1.2
 
@@ -74,15 +75,14 @@ class inputConfigClass:
         #   SFSmodel : none, Smagorinsky, gradient, ML
         self.SFSmodel = 'none'
 
-        # Solver settings
+        # Advancer settings
         #   advancerName : Euler, RK4
-        #   equationMode : scalar, NS
-        #   pSolverMode  : Jacobi, bicgstab
-        #
-        self.advancerName = "Euler"
+        #   equationMode : scalar, NS (Navier-Stokes)
+        self.advancerName = "RK4"
         self.equationMode = "NS"
         #
         # Pressure solver settings
+        #   pSolverMode  : Jacobi, bicgstab
         self.pSolverMode             = "bicgstab"
         self.min_pressure_residual   = 1e-12
         self.max_pressure_iterations = 300
@@ -97,11 +97,14 @@ class inputConfigClass:
         self.numItPlotOut = 20
 
 
-            
+# ----------------------------------------------------
+# PyFlow driver
+# ----------------------------------------------------
 def main(argv):
     # Generate the input configuration
     inputConfig = inputConfigClass()
 
+    # Run PyFlow
     PyFlow.run(inputConfig)
     
     
