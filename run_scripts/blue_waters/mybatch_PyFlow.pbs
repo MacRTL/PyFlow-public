@@ -1,9 +1,10 @@
 #!/bin/bash
-#PBS -lnodes=1:ppn=16:xk,walltime=01:00:00
+#PBS -lnodes=1:ppn=16:xk
 #PBS -lgres=shifter16
-#PBS -v UDI=garnoldncsa/centos-pytorch101
+#PBS -lwalltime=00:30:00
+#PBS -q debug
+#PBS -v UDI="garnoldncsa/centos-pytorch101:latest -v /dsl/opt/cray:/opt/cray"
 #PBS -N PyFlow
-#PBS -A baxh
 # sends mail when process ends
 #PBS -m e 
 #PBS -M <username>@illinois.edu
@@ -12,14 +13,17 @@
 # User-configurable options
 # ------------------------------------------------------------
 
+# Current working directory
+RUN_DIR=/path/to/cwd
+
 # Name of PyFlow driver script
 #
 #   --> NOTE: Needs to match name of driver script in
-#             $PBS_O_WORKDIR/start_PyFlow.sh
+#             $RUN_DIR/start_PyFlow.sh
 #
 PYFLOW_DRIVER=run_PyFlow_test_ML.py
 
-# ML model name to load in driver script (assumed to be available in PBS_O_WORKDIR)
+# ML model name to load in driver script (assumed to be available in RUN_DIR)
 ML_MODEL_NAME=LES_model_PyFlow_Adjoint_1024_Lx0_045_NR_Delta16_Down16.dict
 
 # Number of tasks & tasks per node
@@ -36,7 +40,7 @@ PYFLOW_PATH=/projects/sciteam/baxh/PyFlow
 # ------------------------------------------------------------
 
 # Set up PyFlow environment
-cd $PBS_O_WORKDIR
+cd $RUN_DIR
 cp -r ${PYFLOW_PATH}/src .
 cd src/core
 cp ../../${PYFLOW_DRIVER} .
@@ -50,6 +54,8 @@ module load PrgEnv-gnu
 module load cudatoolkit
 module load cray-mpich-abi
 module load shifter
+
+export CRAY_ROOTFS=SHIFTER
 
 # send MY_LD_LIBRARY_PATH into the container
 # /u/staff/arnoldg/pytorch has some symlinks in it to 
@@ -66,15 +72,10 @@ export MY_PATH=/usr/local/bin:/root/anaconda3/bin:$PATH
 # send cuda device 0 set at CUDA_VISIBLE_DEVICES into container
 export CUDA_VISIBLE_DEVICES=0
 
-echo "### Running garnoldncsa/centos-pytorch101 container (pytorch1.0.1) ###"
+echo "### Testing garnoldncsa/centos-pytorch101 container (pytorch1.0.1) ###"
 
-# just change the last line and any aprun options , leave 
-# everything between the double dashes -- shifter ... --
-aprun -b -n $NTASKS -N $NTASKS_NODE\
-  -- shifter \
-  --image=garnoldncsa/centos-pytorch101 \
-  -V /dsl/opt/cray:/opt/cray \
-  -- ${PBS_O_WORKDIR}/start_PyFlow.sh
+aprun -b -n $NTASKS -N $NTASKS_NODE \
+  -- ${RUN_DIR}/start_PyFlow.sh
 
 # Process results
 cd ../..

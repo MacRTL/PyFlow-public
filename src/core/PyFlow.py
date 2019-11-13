@@ -232,7 +232,6 @@ def run(inputConfig):
                              .cpu().numpy()) / float(numPoints) * 0.5
     initEnergy = TKE
 
-    #rmsVel = np.sqrt(initEnergy/decomp.N)
     if (inputConfig.equationMode=='NS'):
         # Compute the initial divergence
         metric.div_vel(D.state_u_P,D.state_v_P,D.state_w_P,D.source_P)
@@ -386,10 +385,6 @@ def run(inputConfig):
                           viscNu/geometry.dz**2))*simDt
             # This works but won't tell user whether CFL or VNN is limiting
             maxCFL = max((maxCFL,maxVNN))
-            #TKE  = comms.parallel_sum(np.sum( D.data_all_CPU.read(0)**2 +
-            #                                  D.data_all_CPU.read(1)**2 +
-            #                                  D.data_all_CPU.read(2)**2 )) * \
-            #                                  0.5/float(decomp.N)
             TKE = comms.parallel_sum(torch.sum( D.state_u_P.interior()**2 +
                                                 D.state_v_P.interior()**2 +
                                                 D.state_w_P.interior()**2 )
@@ -488,10 +483,10 @@ def run(inputConfig):
                 D.state_w_adj_P.var.copy_( 0.0*(D.state_w_P.var - 0.0) )
 
             else:
-                #targetDataFileStr = inputConfig.dataFileBStr + \
-                #    '{:08d}'.format(inputConfig.startFileIt+itCount)
-                
+                # Get the target file name from the input config
                 targetDataFileStr = inputConfig.getTargetFileName(inputConfig.startFileIt+itCount)
+
+                # Read the target file
                 dr.readNGArestart_parallel(targetDataFileStr,D.target_data_all_CPU)
 
                 # Compute the target data velocity TKE and divergence
@@ -524,26 +519,6 @@ def run(inputConfig):
                 D.state_v_adj_P.var.copy_( torch.sign(D.state_v_P.var - D.state_v_T.var) )
                 D.state_w_adj_P.var.copy_( torch.sign(D.state_w_P.var - D.state_w_T.var) )
 
-                #print('min T u,v,w={}, {}, {}'.format(torch.min(D.state_u_T.interior()),
-                #                                      torch.min(D.state_v_T.interior()),
-                #                                      torch.min(D.state_w_T.interior())))
-                #print('max T u,v,w={}, {}, {}'.format(torch.max(D.state_u_T.interior()),
-                #                                      torch.max(D.state_v_T.interior()),
-                #                                      torch.max(D.state_w_T.interior())))
-
-                #TKE_T = comms.parallel_sum(torch.sum( D.state_u_T.interior()**2 +
-                #                                      D.state_v_T.interior()**2 +
-                #                                      D.state_w_T.interior()**2 )
-                #                           .cpu().numpy()) / float(numPoints) * 0.5
-                #print('TKE T={}'.format(TKE_T))
-
-                #a = D.state_u_T.interior().cpu().numpy()
-                #print('argmax T u={}'.format(np.unravel_index(np.argmin(a,axis=None), a.shape)))
-                #a = D.state_v_T.interior().cpu().numpy()
-                #print('argmax T v={}'.format(np.unravel_index(np.argmin(a,axis=None), a.shape)))
-                #a = D.state_w_T.interior().cpu().numpy()
-                #print('argmax T w={}'.format(np.unravel_index(np.argmin(a,axis=None), a.shape)))
-
                 # Compute the error vs. the target data
                 model_error  = comms.parallel_sum(torch.sum(torch.abs( D.state_u_P.interior() -
                                                                        D.state_u_T.interior() ))
@@ -570,7 +545,6 @@ def run(inputConfig):
                 # Load the checkpointed velocity solution at time t+1
                 #   Overlap cells are already synced in the
                 #   checkpointed solutions
-                # --> JFM: check correct time is loaded??
                 D.state_u_P.var.copy_( D.check_u_P[:,:,:,itCountInner-1] )
                 D.state_v_P.var.copy_( D.check_v_P[:,:,:,itCountInner-1] )
                 D.state_w_P.var.copy_( D.check_w_P[:,:,:,itCountInner-1] )
@@ -647,14 +621,6 @@ def run(inputConfig):
     if (decomp.rank==0):
         dr.writeNGArestart(inputConfig.fNameOut+'_'+timeStr,D.data_all_CPU,True)
     dr.writeNGArestart_parallel(inputConfig.fNameOut+'_'+timeStr,D.data_all_CPU)
-    
-    #if (useTargetData):
-    #    Diff = D.state_u_P.var - target_P
-    #    Loss_i = torch.mean( torch.abs( Diff ) )
-    #    Loss = Loss + Loss_i
-    #    error = np.mean(np.abs( D.state_u_P.var.cpu().numpy() -  target_P.cpu().numpy() ) )
-        
-    #Loss_np = Loss.cpu().numpy()
 
     time2 = time.time()
     time_elapsed = time2 - time1
