@@ -488,8 +488,10 @@ def run(inputConfig):
                 D.state_w_adj_P.var.copy_( 0.0*(D.state_w_P.var - 0.0) )
 
             else:
-                targetDataFileStr = inputConfig.dataFileBStr + \
-                    '{:08d}'.format(inputConfig.startFileIt+itCount)
+                #targetDataFileStr = inputConfig.dataFileBStr + \
+                #    '{:08d}'.format(inputConfig.startFileIt+itCount)
+                
+                targetDataFileStr = inputConfig.getTargetFileName(inputConfig.startFileIt+itCount)
                 dr.readNGArestart_parallel(targetDataFileStr,D.target_data_all_CPU)
 
                 # Compute the target data velocity TKE and divergence
